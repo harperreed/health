@@ -40,8 +40,3 @@ func NewServer(db *sql.DB) (*Server, error) {
 func (s *Server) Serve(ctx context.Context) error {
 	return s.mcpServer.Run(ctx, &mcp.StdioTransport{})
 }
-
-// registerResources registers all MCP resources.
-func (s *Server) registerResources() {
-	// Will be implemented in Task 14
-}
