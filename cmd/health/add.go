@@ -22,13 +22,53 @@ var addCmd = &cobra.Command{
 	Use:     "add <type> <value> [value2]",
 	Aliases: []string{"a"},
 	Short:   "Add a health metric",
-	Long: `Add a health metric. For blood pressure, provide both systolic and diastolic values.
+	Long: `Add a health metric to your personal health log.
 
-Examples:
-  health add weight 82.5
-  health add hrv 48 --at "2024-12-14 07:00"
-  health add bp 120 80
-  health add mood 7 --notes "Good day"`,
+METRIC TYPES:
+
+  Biometrics:
+    weight         Body weight in kg
+    body_fat       Body fat percentage
+    bp             Blood pressure (requires TWO values: systolic diastolic)
+    heart_rate     Resting heart rate in bpm
+    hrv            Heart rate variability in ms
+    temperature    Body temperature in °C
+
+  Activity:
+    steps          Daily step count
+    sleep_hours    Hours of sleep
+    active_calories Calories burned through activity
+
+  Nutrition:
+    water          Water intake in ml
+    calories       Total calorie intake
+    protein        Protein intake in grams
+    carbs          Carbohydrate intake in grams
+    fat            Fat intake in grams
+
+  Mental Health (1-10 scale):
+    mood           Overall mood rating
+    energy         Energy level rating
+    stress         Stress level rating
+    anxiety        Anxiety level rating
+    focus          Focus/concentration rating
+    meditation     Meditation duration in minutes
+
+EXAMPLES:
+
+  health add weight 82.5                    # Log weight
+  health add bp 120 80                      # Blood pressure (sys/dia)
+  health add hrv 48 --at "2024-12-14 07:00" # HRV with specific timestamp
+  health add mood 7 --notes "Great day!"    # Mood with notes
+  health add steps 10432                    # Daily steps
+  health add sleep_hours 7.5                # Sleep duration
+
+TIMESTAMPS:
+
+  Use --at to record a metric for a specific time:
+    --at "2024-12-14 07:00"
+    --at "2024-12-14T07:00"
+    --at "2024-12-14"`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		metricType := args[0]

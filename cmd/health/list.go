@@ -21,12 +21,29 @@ var listCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls", "l"},
 	Short:   "List health metrics",
-	Long: `List recent health metrics, optionally filtered by type.
+	Long: `List recent health metrics from your health log.
 
-Examples:
-  health list
-  health list --type weight
-  health list --type mood --limit 20`,
+OUTPUT FORMAT:
+
+  Each line shows: ID  TIMESTAMP  TYPE  VALUE  UNIT  (NOTES)
+
+  The ID is an 8-character prefix you can use with delete commands.
+
+FILTERING:
+
+  Use --type to filter by metric type:
+    weight, body_fat, bp_sys, bp_dia, heart_rate, hrv, temperature,
+    steps, sleep_hours, active_calories, water, calories, protein,
+    carbs, fat, mood, energy, stress, anxiety, focus, meditation
+
+  Note: Blood pressure is stored as bp_sys and bp_dia separately.
+
+EXAMPLES:
+
+  health list                    # Show last 20 metrics (all types)
+  health list --type weight      # Show only weight entries
+  health list --type mood -n 50  # Show last 50 mood entries
+  health list -t hrv             # Show HRV measurements`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var metricType *models.MetricType
 		if listType != "" {

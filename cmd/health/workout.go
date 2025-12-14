@@ -23,6 +23,26 @@ var workoutCmd = &cobra.Command{
 	Use:     "workout",
 	Aliases: []string{"w"},
 	Short:   "Manage workouts",
+	Long: `Track workout sessions with custom metrics.
+
+Unlike regular metrics which are single values, workouts are sessions that can
+have multiple associated metrics (distance, pace, heart rate, sets, reps, etc.)
+
+WORKFLOW:
+
+  1. Create a workout:     health workout add run --duration 30
+  2. Add metrics to it:    health workout metric abc123 distance 5.2 km
+  3. View workout details: health workout show abc123
+
+COMMANDS:
+
+  add      Create a new workout session
+  list     List recent workouts
+  show     View workout with all its metrics
+  metric   Add a metric to an existing workout
+
+The workout type is freeform - use whatever makes sense for you:
+  run, lift, swim, cycle, yoga, hiit, walk, climb, etc.`,
 }
 
 var workoutAddCmd = &cobra.Command{
