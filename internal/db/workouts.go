@@ -143,9 +143,18 @@ func scanWorkout(row *sql.Row) (*models.Workout, error) {
 		return nil, fmt.Errorf("failed to scan workout: %w", err)
 	}
 
-	w.ID, _ = uuid.Parse(idStr)
-	w.StartedAt, _ = time.Parse(time.RFC3339, startedAt)
-	w.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	w.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workout ID in database: %w", err)
+	}
+	w.StartedAt, err = time.Parse(time.RFC3339, startedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid started_at timestamp: %w", err)
+	}
+	w.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
+	}
 
 	return &w, nil
 }
@@ -159,9 +168,18 @@ func scanWorkoutRows(rows *sql.Rows) (*models.Workout, error) {
 		return nil, fmt.Errorf("failed to scan workout: %w", err)
 	}
 
-	w.ID, _ = uuid.Parse(idStr)
-	w.StartedAt, _ = time.Parse(time.RFC3339, startedAt)
-	w.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	w.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workout ID in database: %w", err)
+	}
+	w.StartedAt, err = time.Parse(time.RFC3339, startedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid started_at timestamp: %w", err)
+	}
+	w.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
+	}
 
 	return &w, nil
 }
@@ -175,9 +193,18 @@ func scanWorkoutMetric(rows *sql.Rows) (*models.WorkoutMetric, error) {
 		return nil, fmt.Errorf("failed to scan workout metric: %w", err)
 	}
 
-	wm.ID, _ = uuid.Parse(idStr)
-	wm.WorkoutID, _ = uuid.Parse(workoutIDStr)
-	wm.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	wm.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workout_metric ID in database: %w", err)
+	}
+	wm.WorkoutID, err = uuid.Parse(workoutIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workout_id in database: %w", err)
+	}
+	wm.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
+	}
 
 	return &wm, nil
 }

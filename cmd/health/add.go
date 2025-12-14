@@ -110,11 +110,22 @@ func addBloodPressure(sysStr, diaStr string) error {
 		mDia.WithNotes(addNotes)
 	}
 
-	if err := db.CreateMetric(dbConn, mSys); err != nil {
+	// Use transaction to ensure both values are saved atomically
+	tx, err := dbConn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := db.CreateMetricTx(tx, mSys); err != nil {
 		return fmt.Errorf("failed to create bp_sys: %w", err)
 	}
-	if err := db.CreateMetric(dbConn, mDia); err != nil {
+	if err := db.CreateMetricTx(tx, mDia); err != nil {
 		return fmt.Errorf("failed to create bp_dia: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit blood pressure: %w", err)
 	}
 
 	color.Green("✓ Added blood pressure")

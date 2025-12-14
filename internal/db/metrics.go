@@ -25,6 +25,20 @@ func CreateMetric(db *sql.DB, m *models.Metric) error {
 	return nil
 }
 
+// CreateMetricTx inserts a new metric using an existing transaction.
+func CreateMetricTx(tx *sql.Tx, m *models.Metric) error {
+	_, err := tx.Exec(`
+		INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		m.ID.String(), string(m.MetricType), m.Value, m.Unit,
+		m.RecordedAt.Format(time.RFC3339), m.Notes,
+		m.CreatedAt.Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("failed to create metric: %w", err)
+	}
+	return nil
+}
+
 // GetMetric retrieves a metric by ID or ID prefix.
 func GetMetric(db *sql.DB, idOrPrefix string) (*models.Metric, error) {
 	var row *sql.Row
@@ -108,10 +122,19 @@ func scanMetric(row *sql.Row) (*models.Metric, error) {
 		return nil, fmt.Errorf("failed to scan metric: %w", err)
 	}
 
-	m.ID, _ = uuid.Parse(idStr)
+	m.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid metric ID in database: %w", err)
+	}
 	m.MetricType = models.MetricType(metricType)
-	m.RecordedAt, _ = time.Parse(time.RFC3339, recordedAt)
-	m.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	m.RecordedAt, err = time.Parse(time.RFC3339, recordedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid recorded_at timestamp: %w", err)
+	}
+	m.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
+	}
 
 	return &m, nil
 }
@@ -126,10 +149,19 @@ func scanMetricRows(rows *sql.Rows) (*models.Metric, error) {
 		return nil, fmt.Errorf("failed to scan metric: %w", err)
 	}
 
-	m.ID, _ = uuid.Parse(idStr)
+	m.ID, err = uuid.Parse(idStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid metric ID in database: %w", err)
+	}
 	m.MetricType = models.MetricType(metricType)
-	m.RecordedAt, _ = time.Parse(time.RFC3339, recordedAt)
-	m.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	m.RecordedAt, err = time.Parse(time.RFC3339, recordedAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid recorded_at timestamp: %w", err)
+	}
+	m.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("invalid created_at timestamp: %w", err)
+	}
 
 	return &m, nil
 }
