@@ -16,43 +16,49 @@ No external integrations initially - pure manual data entry via CLI and MCP tool
 
 ```
 health/
-├── pyproject.toml
-├── src/health/
-│   ├── __init__.py
-│   ├── __main__.py           # CLI entry point
-│   ├── cli/
-│   │   ├── __init__.py
-│   │   ├── root.py           # Main CLI (Click)
-│   │   ├── metrics.py        # add/list/query metrics commands
-│   │   ├── workouts.py       # workout commands
-│   │   └── mcp.py            # MCP server launch command
+├── go.mod
+├── go.sum
+├── Makefile
+├── .goreleaser.yml
+├── cmd/health/
+│   ├── main.go               # Entry point
+│   ├── root.go               # Root command, DB init
+│   ├── add.go                # Add metric command
+│   ├── list.go               # List metrics command
+│   ├── workout.go            # Workout subcommands
+│   ├── mcp.go                # MCP server command
+│   └── version.go            # Version info
+├── internal/
 │   ├── db/
-│   │   ├── __init__.py
-│   │   ├── database.py       # Connection, init, XDG paths
-│   │   ├── schema.py         # SQL schema
-│   │   ├── metrics.py        # Metric CRUD
-│   │   └── workouts.py       # Workout CRUD
+│   │   ├── db.go             # Connection, init, XDG paths
+│   │   ├── schema.go         # SQL schema
+│   │   ├── metrics.go        # Metric CRUD
+│   │   ├── workouts.go       # Workout CRUD
+│   │   └── *_test.go
 │   ├── models/
-│   │   ├── __init__.py
-│   │   ├── metric.py         # Metric dataclass + types enum
-│   │   └── workout.py        # Workout + WorkoutMetric dataclasses
-│   └── mcp/
-│       ├── __init__.py
-│       ├── server.py         # MCP server setup
-│       ├── tools.py          # Tool implementations
-│       └── resources.py      # Resource implementations
-└── tests/
-    ├── test_db.py
-    ├── test_models.py
-    └── test_mcp.py
+│   │   ├── metric.go         # Metric struct + MetricType
+│   │   ├── workout.go        # Workout + WorkoutMetric structs
+│   │   └── *_test.go
+│   ├── mcp/
+│   │   ├── server.go         # MCP server setup
+│   │   ├── tools.go          # Tool implementations
+│   │   ├── resources.go      # Resource implementations
+│   │   └── *_test.go
+│   └── ui/
+│       └── format.go         # Color output helpers
+├── test/
+│   └── integration_test.go
+└── docs/
+    └── plans/
 ```
 
 ## Dependencies
 
-- `click` - CLI framework
-- `mcp` - Official MCP Python SDK
-- `platformdirs` - XDG path handling (cross-platform)
-- Standard library `sqlite3`
+- `github.com/spf13/cobra` - CLI framework
+- `github.com/modelcontextprotocol/go-sdk` - MCP Go SDK
+- `modernc.org/sqlite` - Pure Go SQLite (no CGO)
+- `github.com/google/uuid` - UUID generation
+- `github.com/fatih/color` - Terminal colors
 
 ## Database
 
@@ -64,36 +70,50 @@ health/
 
 ### Metric Types
 
-```python
-class MetricType(str, Enum):
-    # Biometrics
-    WEIGHT = "weight"              # kg
-    BODY_FAT = "body_fat"          # percentage
-    BLOOD_PRESSURE_SYS = "bp_sys"  # mmHg
-    BLOOD_PRESSURE_DIA = "bp_dia"  # mmHg
-    HEART_RATE = "heart_rate"      # bpm
-    HRV = "hrv"                    # ms (RMSSD)
-    TEMPERATURE = "temperature"    # celsius
+```go
+type MetricType string
 
-    # Activity
-    STEPS = "steps"                # count
-    SLEEP_HOURS = "sleep_hours"    # decimal hours
-    ACTIVE_CALORIES = "active_calories"  # kcal
+const (
+    // Biometrics
+    MetricWeight      MetricType = "weight"       // kg
+    MetricBodyFat     MetricType = "body_fat"     // percentage
+    MetricBPSys       MetricType = "bp_sys"       // mmHg
+    MetricBPDia       MetricType = "bp_dia"       // mmHg
+    MetricHeartRate   MetricType = "heart_rate"   // bpm
+    MetricHRV         MetricType = "hrv"          // ms (RMSSD)
+    MetricTemperature MetricType = "temperature"  // celsius
 
-    # Nutrition
-    WATER = "water"                # ml
-    CALORIES = "calories"          # kcal
-    PROTEIN = "protein"            # grams
-    CARBS = "carbs"                # grams
-    FAT = "fat"                    # grams
+    // Activity
+    MetricSteps          MetricType = "steps"           // count
+    MetricSleepHours     MetricType = "sleep_hours"     // decimal hours
+    MetricActiveCalories MetricType = "active_calories" // kcal
 
-    # Mental Health
-    MOOD = "mood"                  # 1-10 scale
-    ENERGY = "energy"              # 1-10 scale
-    STRESS = "stress"              # 1-10 scale
-    ANXIETY = "anxiety"            # 1-10 scale
-    FOCUS = "focus"                # 1-10 scale
-    MEDITATION = "meditation"      # minutes
+    // Nutrition
+    MetricWater    MetricType = "water"    // ml
+    MetricCalories MetricType = "calories" // kcal
+    MetricProtein  MetricType = "protein"  // grams
+    MetricCarbs    MetricType = "carbs"    // grams
+    MetricFat      MetricType = "fat"      // grams
+
+    // Mental Health
+    MetricMood       MetricType = "mood"       // 1-10 scale
+    MetricEnergy     MetricType = "energy"     // 1-10 scale
+    MetricStress     MetricType = "stress"     // 1-10 scale
+    MetricAnxiety    MetricType = "anxiety"    // 1-10 scale
+    MetricFocus      MetricType = "focus"      // 1-10 scale
+    MetricMeditation MetricType = "meditation" // minutes
+)
+
+// MetricUnits maps metric types to their units
+var MetricUnits = map[MetricType]string{
+    MetricWeight: "kg", MetricBodyFat: "%", MetricBPSys: "mmHg",
+    MetricBPDia: "mmHg", MetricHeartRate: "bpm", MetricHRV: "ms",
+    MetricTemperature: "°C", MetricSteps: "steps", MetricSleepHours: "hours",
+    MetricActiveCalories: "kcal", MetricWater: "ml", MetricCalories: "kcal",
+    MetricProtein: "g", MetricCarbs: "g", MetricFat: "g",
+    MetricMood: "scale", MetricEnergy: "scale", MetricStress: "scale",
+    MetricAnxiety: "scale", MetricFocus: "scale", MetricMeditation: "min",
+}
 ```
 
 ### Schema
