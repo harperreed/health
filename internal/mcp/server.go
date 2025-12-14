@@ -41,11 +41,6 @@ func (s *Server) Serve(ctx context.Context) error {
 	return s.mcpServer.Run(ctx, &mcp.StdioTransport{})
 }
 
-// registerTools registers all MCP tools.
-func (s *Server) registerTools() {
-	// Will be implemented in Task 13
-}
-
 // registerResources registers all MCP resources.
 func (s *Server) registerResources() {
 	// Will be implemented in Task 14
