@@ -1,0 +1,6 @@
+# Build artifacts
+health
+
+# Coverage files
+coverage.out
+coverage.html
