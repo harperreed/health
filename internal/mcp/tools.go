@@ -71,10 +71,10 @@ func (s *Server) registerTools() {
 // Tool input/output types
 
 type addMetricInput struct {
-	MetricType string  `json:"metric_type" jsonschema:"description=Type of metric (weight, body_fat, bp_sys, bp_dia, heart_rate, hrv, temperature, steps, sleep_hours, active_calories, water, calories, protein, carbs, fat, mood, energy, stress, anxiety, focus, meditation),required"`
-	Value      float64 `json:"value" jsonschema:"description=The metric value,required"`
-	RecordedAt string  `json:"recorded_at,omitempty" jsonschema:"description=Timestamp (ISO 8601), defaults to now"`
-	Notes      string  `json:"notes,omitempty" jsonschema:"description=Optional notes"`
+	MetricType string  `json:"metric_type"`
+	Value      float64 `json:"value"`
+	RecordedAt string  `json:"recorded_at,omitempty"`
+	Notes      string  `json:"notes,omitempty"`
 }
 
 type metricOutput struct {
@@ -86,12 +86,12 @@ type metricOutput struct {
 }
 
 type listMetricsInput struct {
-	MetricType string `json:"metric_type,omitempty" jsonschema:"description=Filter by metric type"`
-	Limit      int    `json:"limit,omitempty" jsonschema:"description=Max results (default 20)"`
+	MetricType string `json:"metric_type,omitempty"`
+	Limit      int    `json:"limit,omitempty"`
 }
 
 type deleteMetricInput struct {
-	ID string `json:"id" jsonschema:"description=Metric ID or prefix,required"`
+	ID string `json:"id"`
 }
 
 type simpleOutput struct {
@@ -99,9 +99,9 @@ type simpleOutput struct {
 }
 
 type addWorkoutInput struct {
-	WorkoutType     string `json:"workout_type" jsonschema:"description=Type of workout (run, lift, cycle, swim, etc.),required"`
-	DurationMinutes int    `json:"duration_minutes,omitempty" jsonschema:"description=Duration in minutes"`
-	Notes           string `json:"notes,omitempty" jsonschema:"description=Workout notes"`
+	WorkoutType     string `json:"workout_type"`
+	DurationMinutes int    `json:"duration_minutes,omitempty"`
+	Notes           string `json:"notes,omitempty"`
 }
 
 type workoutOutput struct {
@@ -111,23 +111,23 @@ type workoutOutput struct {
 }
 
 type addWorkoutMetricInput struct {
-	WorkoutID  string  `json:"workout_id" jsonschema:"description=Workout ID or prefix,required"`
-	MetricName string  `json:"metric_name" jsonschema:"description=Name of the metric (distance, pace, sets, reps, etc.),required"`
-	Value      float64 `json:"value" jsonschema:"description=The value,required"`
-	Unit       string  `json:"unit,omitempty" jsonschema:"description=Unit of measurement"`
+	WorkoutID  string  `json:"workout_id"`
+	MetricName string  `json:"metric_name"`
+	Value      float64 `json:"value"`
+	Unit       string  `json:"unit,omitempty"`
 }
 
 type listWorkoutsInput struct {
-	WorkoutType string `json:"workout_type,omitempty" jsonschema:"description=Filter by workout type"`
-	Limit       int    `json:"limit,omitempty" jsonschema:"description=Max results (default 20)"`
+	WorkoutType string `json:"workout_type,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
 }
 
 type getWorkoutInput struct {
-	ID string `json:"id" jsonschema:"description=Workout ID or prefix,required"`
+	ID string `json:"id"`
 }
 
 type getLatestInput struct {
-	MetricTypes []string `json:"metric_types,omitempty" jsonschema:"description=List of metric types to get latest values for"`
+	MetricTypes []string `json:"metric_types,omitempty"`
 }
 
 // Tool handlers
