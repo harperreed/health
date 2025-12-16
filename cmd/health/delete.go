@@ -8,6 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/db"
 	"github.com/spf13/cobra"
+	"suitesync/vault"
 )
 
 var deleteCmd = &cobra.Command{
@@ -37,6 +38,11 @@ CAUTION:
 		metric, err := db.GetMetric(dbConn, idOrPrefix)
 		if err != nil {
 			return fmt.Errorf("metric not found: %s", idOrPrefix)
+		}
+
+		// Queue sync delete before local delete
+		if err := queueMetricSync(cmd.Context(), metric, vault.OpDelete); err != nil {
+			color.Yellow("⚠ Sync queue failed: %v", err)
 		}
 
 		if err := db.DeleteMetric(dbConn, idOrPrefix); err != nil {

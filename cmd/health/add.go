@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
@@ -10,7 +11,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/db"
 	"github.com/harperreed/health/internal/models"
+	"github.com/harperreed/health/internal/sync"
 	"github.com/spf13/cobra"
+	"suitesync/vault"
 )
 
 var (
@@ -111,6 +114,11 @@ TIMESTAMPS:
 			return fmt.Errorf("failed to create metric: %w", err)
 		}
 
+		// Queue for sync if configured
+		if err := queueMetricSync(cmd.Context(), m, vault.OpUpsert); err != nil {
+			color.Yellow("⚠ Sync queue failed: %v", err)
+		}
+
 		color.Green("✓ Added %s", metricType)
 		fmt.Printf("  %s %.2f %s\n",
 			color.New(color.Faint).Sprint(m.ID.String()[:8]),
@@ -168,6 +176,15 @@ func addBloodPressure(sysStr, diaStr string) error {
 		return fmt.Errorf("failed to commit blood pressure: %w", err)
 	}
 
+	// Queue for sync if configured
+	ctx := context.Background()
+	if err := queueMetricSync(ctx, mSys, vault.OpUpsert); err != nil {
+		color.Yellow("⚠ Sync queue failed: %v", err)
+	}
+	if err := queueMetricSync(ctx, mDia, vault.OpUpsert); err != nil {
+		color.Yellow("⚠ Sync queue failed: %v", err)
+	}
+
 	color.Green("✓ Added blood pressure")
 	fmt.Printf("  %s %.0f/%.0f mmHg\n",
 		color.New(color.Faint).Sprint(mSys.ID.String()[:8]),
@@ -195,4 +212,24 @@ func init() {
 	addCmd.Flags().StringVar(&addAt, "at", "", "timestamp (YYYY-MM-DD HH:MM)")
 	addCmd.Flags().StringVar(&addNotes, "notes", "", "notes for the metric")
 	rootCmd.AddCommand(addCmd)
+}
+
+// queueMetricSync queues a metric change for sync if configured.
+func queueMetricSync(ctx context.Context, m *models.Metric, op vault.Op) error {
+	cfg, err := sync.LoadConfig()
+	if err != nil {
+		return nil // No config, skip silently
+	}
+
+	if !cfg.IsConfigured() {
+		return nil // Not configured, skip silently
+	}
+
+	syncer, err := sync.NewSyncer(cfg, dbConn)
+	if err != nil {
+		return fmt.Errorf("create syncer: %w", err)
+	}
+	defer func() { _ = syncer.Close() }()
+
+	return syncer.QueueMetricChange(ctx, m, op)
 }

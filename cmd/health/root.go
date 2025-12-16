@@ -41,6 +41,15 @@ WORKOUTS:
   $ health workout metric abc123 km 5.2     # Add distance to workout
   $ health workout show abc123              # View workout details
 
+SYNC (E2E ENCRYPTED):
+
+  Sync health data across devices with end-to-end encryption.
+
+  $ health sync register    # Create account (saves recovery phrase)
+  $ health sync login       # Login on another device
+  $ health sync status      # Check sync status
+  $ health sync now         # Manual sync
+
 MCP INTEGRATION:
 
   Run 'health mcp' to start the Model Context Protocol server for use with

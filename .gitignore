@@ -1,5 +1,5 @@
 # Build artifacts
-health
+/health
 
 # Coverage files
 coverage.out
