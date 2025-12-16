@@ -87,10 +87,13 @@ Example:
 			return fmt.Errorf("password is required")
 		}
 
-		// Register
+		// Generate device ID before registration (required by v0.3.0)
+		deviceID := sync.GenerateDeviceID()
+
+		// Register with device ID
 		ctx := context.Background()
 		authClient := vault.NewPBAuthClient(syncServer)
-		result, err := authClient.Register(ctx, email, password)
+		result, err := authClient.Register(ctx, email, password, deviceID)
 		if err != nil {
 			return fmt.Errorf("registration failed: %w", err)
 		}
@@ -109,7 +112,7 @@ Example:
 			Token:        result.Token.Token,
 			TokenExpires: result.Token.Expires.Format(time.RFC3339),
 			DerivedKey:   derivedKeyHex,
-			DeviceID:     sync.GenerateDeviceID(),
+			DeviceID:     deviceID,
 			VaultDB:      sync.VaultDBPath(),
 			AutoSync:     true,
 		}
@@ -182,10 +185,13 @@ Example:
 			return fmt.Errorf("invalid recovery phrase: %w", err)
 		}
 
-		// Login
+		// Generate device ID before login (required by v0.3.0)
+		deviceID := sync.GenerateDeviceID()
+
+		// Login with device ID
 		ctx := context.Background()
 		authClient := vault.NewPBAuthClient(syncServer)
-		result, err := authClient.Login(ctx, email, password)
+		result, err := authClient.Login(ctx, email, password, deviceID)
 		if err != nil {
 			return fmt.Errorf("login failed: %w", err)
 		}
@@ -201,7 +207,7 @@ Example:
 			RefreshToken: result.RefreshToken,
 			TokenExpires: result.Token.Expires.Format(time.RFC3339),
 			DerivedKey:   derivedKeyHex,
-			DeviceID:     sync.GenerateDeviceID(),
+			DeviceID:     deviceID,
 			VaultDB:      sync.VaultDBPath(),
 			AutoSync:     true,
 		}
