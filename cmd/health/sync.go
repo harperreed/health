@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -170,10 +171,13 @@ Example:
 			return fmt.Errorf("password is required")
 		}
 
-		// Prompt for recovery phrase
+		// Prompt for recovery phrase (need ReadString to capture spaces)
 		fmt.Print("Recovery phrase (24 words): ")
-		var mnemonic string
-		fmt.Scanln(&mnemonic)
+		reader := bufio.NewReader(os.Stdin)
+		mnemonic, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("read recovery phrase: %w", err)
+		}
 		mnemonic = strings.TrimSpace(mnemonic)
 		if mnemonic == "" {
 			return fmt.Errorf("recovery phrase is required")
