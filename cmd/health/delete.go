@@ -8,7 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/db"
 	"github.com/spf13/cobra"
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 )
 
 var deleteCmd = &cobra.Command{

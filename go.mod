@@ -7,15 +7,13 @@ toolchain go1.24.11
 require (
 	github.com/fatih/color v1.18.0
 	github.com/google/uuid v1.6.0
+	github.com/harperreed/sweet v0.3.1
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.38.0
 	modernc.org/sqlite v1.40.1
-	suitesync v0.3.0
 )
-
-replace suitesync => github.com/harperreed/sweet v0.3.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

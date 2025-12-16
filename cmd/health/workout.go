@@ -12,7 +12,7 @@ import (
 	"github.com/harperreed/health/internal/models"
 	"github.com/harperreed/health/internal/sync"
 	"github.com/spf13/cobra"
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 )
 
 var (

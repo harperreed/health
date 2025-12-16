@@ -15,7 +15,7 @@ import (
 	"github.com/harperreed/health/internal/sync"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 )
 
 var (

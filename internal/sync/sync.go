@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/harperreed/health/internal/models"
-	"suitesync/vault"
+	"github.com/harperreed/sweet/vault"
 )
 
 // Syncer manages sync operations for health data.
