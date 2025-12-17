@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,13 +17,19 @@ import (
 	"github.com/harperreed/sweet/vault"
 )
 
+const (
+	// AppID is the unique namespace UUID for health app.
+	AppID = "8f3d5e7a-2b9c-4f1e-a6d8-1c4b7e9f2a3d"
+)
+
 // Syncer manages sync operations for health data.
 type Syncer struct {
-	config *Config
-	store  *vault.Store
-	keys   vault.Keys
-	client *vault.Client
-	appDB  *sql.DB
+	config      *Config
+	store       *vault.Store
+	keys        vault.Keys
+	client      *vault.Client
+	vaultSyncer *vault.Syncer
+	appDB       *sql.DB
 }
 
 // MetricPayload is the sync payload for a health metric.
@@ -80,12 +87,17 @@ func NewSyncer(cfg *Config, appDB *sql.DB) (*Syncer, error) {
 		return nil, fmt.Errorf("open vault store: %w", err)
 	}
 
+	if err := ensurePendingWorkoutMetricTable(appDB); err != nil {
+		return nil, fmt.Errorf("prepare pending workout metrics: %w", err)
+	}
+
 	var tokenExpires time.Time
 	if cfg.TokenExpires != "" {
 		tokenExpires, _ = time.Parse(time.RFC3339, cfg.TokenExpires)
 	}
 
 	client := vault.NewClient(vault.SyncConfig{
+		AppID:        AppID,
 		BaseURL:      cfg.Server,
 		DeviceID:     cfg.DeviceID,
 		AuthToken:    cfg.Token,
@@ -101,11 +113,12 @@ func NewSyncer(cfg *Config, appDB *sql.DB) (*Syncer, error) {
 	})
 
 	return &Syncer{
-		config: cfg,
-		store:  store,
-		keys:   keys,
-		client: client,
-		appDB:  appDB,
+		config:      cfg,
+		store:       store,
+		keys:        keys,
+		client:      client,
+		vaultSyncer: vault.NewSyncer(store, client, keys, cfg.UserID),
+		appDB:       appDB,
 	}, nil
 }
 
@@ -125,12 +138,7 @@ func (s *Syncer) QueueMetricChange(ctx context.Context, m *models.Metric, op vau
 		Notes:      m.Notes,
 	}
 
-	change, err := vault.NewChange("metric", m.ID.String(), op, payload)
-	if err != nil {
-		return fmt.Errorf("create change: %w", err)
-	}
-
-	return s.enqueueChange(ctx, change)
+	return s.enqueueChange(ctx, "metric", m.ID.String(), op, payload)
 }
 
 // QueueWorkoutChange queues a workout change for sync.
@@ -143,12 +151,7 @@ func (s *Syncer) QueueWorkoutChange(ctx context.Context, w *models.Workout, op v
 		Notes:           w.Notes,
 	}
 
-	change, err := vault.NewChange("workout", w.ID.String(), op, payload)
-	if err != nil {
-		return fmt.Errorf("create change: %w", err)
-	}
-
-	return s.enqueueChange(ctx, change)
+	return s.enqueueChange(ctx, "workout", w.ID.String(), op, payload)
 }
 
 // QueueWorkoutMetricChange queues a workout metric change for sync.
@@ -161,30 +164,17 @@ func (s *Syncer) QueueWorkoutMetricChange(ctx context.Context, wm *models.Workou
 		Unit:       wm.Unit,
 	}
 
-	change, err := vault.NewChange("workout_metric", wm.ID.String(), op, payload)
-	if err != nil {
-		return fmt.Errorf("create change: %w", err)
-	}
-
-	return s.enqueueChange(ctx, change)
+	return s.enqueueChange(ctx, "workout_metric", wm.ID.String(), op, payload)
 }
 
 // enqueueChange encrypts and queues a change.
-func (s *Syncer) enqueueChange(ctx context.Context, change vault.Change) error {
-	userID := s.config.UserID
-	aad := change.AAD(userID, s.config.DeviceID)
-	plaintext, err := json.Marshal(change)
-	if err != nil {
-		return fmt.Errorf("marshal change: %w", err)
+func (s *Syncer) enqueueChange(ctx context.Context, entity, entityID string, op vault.Op, payload any) error {
+	if s.vaultSyncer == nil {
+		return fmt.Errorf("vault sync not configured")
 	}
 
-	env, err := vault.Encrypt(s.keys.EncKey, plaintext, aad)
-	if err != nil {
-		return fmt.Errorf("encrypt: %w", err)
-	}
-
-	if err := s.store.EnqueueEncryptedChange(ctx, change, userID, s.config.DeviceID, env); err != nil {
-		return err
+	if _, err := s.vaultSyncer.QueueChange(ctx, entity, entityID, op, payload); err != nil {
+		return fmt.Errorf("queue change: %w", err)
 	}
 
 	// Auto-sync if enabled
@@ -216,6 +206,11 @@ func (s *Syncer) SyncWithEvents(ctx context.Context, events *vault.SyncEvents) e
 // Status returns the current sync status.
 func (s *Syncer) Status(ctx context.Context) (vault.SyncStatus, error) {
 	return s.store.SyncStatus(ctx)
+}
+
+// PendingCount returns the number of changes waiting to be synced.
+func (s *Syncer) PendingCount(ctx context.Context) (int, error) {
+	return s.store.PendingCount(ctx)
 }
 
 // Health checks server connectivity.
@@ -297,6 +292,9 @@ func (s *Syncer) applyWorkoutChange(ctx context.Context, c vault.Change) error {
 			payload.ID, payload.WorkoutType, startedAt.Format(time.RFC3339),
 			payload.DurationMinutes, payload.Notes, time.Now().Format(time.RFC3339),
 		)
+		if err == nil {
+			_ = s.applyPendingWorkoutMetrics(ctx, payload.ID)
+		}
 		return err
 
 	case vault.OpDelete:
@@ -315,40 +313,115 @@ func (s *Syncer) applyWorkoutMetricChange(ctx context.Context, c vault.Change) e
 		return fmt.Errorf("unmarshal workout_metric payload: %w", err)
 	}
 
-	// Verify workout exists
-	var exists int
-	err := s.appDB.QueryRowContext(ctx, `SELECT 1 FROM workouts WHERE id = ?`, payload.WorkoutID).Scan(&exists)
-	if err == sql.ErrNoRows {
-		// Workout doesn't exist yet - skip this metric (it will come with the workout)
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
 	switch c.Op {
-	case vault.OpUpsert:
-		wID, err := uuid.Parse(payload.WorkoutID)
-		if err != nil {
-			return fmt.Errorf("parse workout_id: %w", err)
-		}
-
-		_, err = s.appDB.ExecContext(ctx, `
-			INSERT INTO workout_metrics (id, workout_id, metric_name, value, unit, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				metric_name = excluded.metric_name,
-				value = excluded.value,
-				unit = excluded.unit`,
-			payload.ID, wID.String(), payload.MetricName, payload.Value, payload.Unit,
-			time.Now().Format(time.RFC3339),
-		)
-		return err
-
 	case vault.OpDelete:
 		_, err := s.appDB.ExecContext(ctx, `DELETE FROM workout_metrics WHERE id = ?`, payload.ID)
 		return err
+
+	case vault.OpUpsert:
+		exists, err := s.workoutExists(ctx, payload.WorkoutID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return s.savePendingWorkoutMetric(ctx, payload)
+		}
+
+		if err := s.upsertWorkoutMetricRow(ctx, payload); err != nil {
+			return err
+		}
+		return s.deletePendingWorkoutMetric(ctx, payload.ID)
 	}
 
 	return nil
+}
+
+func ensurePendingWorkoutMetricTable(dbConn *sql.DB) error {
+	_, err := dbConn.Exec(`
+CREATE TABLE IF NOT EXISTS pending_workout_metrics (
+  id TEXT PRIMARY KEY,
+  workout_id TEXT NOT NULL,
+  payload BLOB NOT NULL
+)`)
+	return err
+}
+
+func (s *Syncer) workoutExists(ctx context.Context, workoutID string) (bool, error) {
+	var exists int
+	err := s.appDB.QueryRowContext(ctx, `SELECT 1 FROM workouts WHERE id = ?`, workoutID).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Syncer) savePendingWorkoutMetric(ctx context.Context, payload WorkoutMetricPayload) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = s.appDB.ExecContext(ctx, `
+INSERT INTO pending_workout_metrics (id, workout_id, payload)
+VALUES (?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  payload = excluded.payload,
+  workout_id = excluded.workout_id
+`, payload.ID, payload.WorkoutID, data)
+	return err
+}
+
+func (s *Syncer) deletePendingWorkoutMetric(ctx context.Context, metricID string) error {
+	_, err := s.appDB.ExecContext(ctx, `DELETE FROM pending_workout_metrics WHERE id = ?`, metricID)
+	return err
+}
+
+func (s *Syncer) applyPendingWorkoutMetrics(ctx context.Context, workoutID string) error {
+	rows, err := s.appDB.QueryContext(ctx, `SELECT id, payload FROM pending_workout_metrics WHERE workout_id = ?`, workoutID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			return err
+		}
+
+		var payload WorkoutMetricPayload
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			log.Printf("health: invalid pending workout metric %s: %v", id, err)
+			_ = s.deletePendingWorkoutMetric(ctx, id)
+			continue
+		}
+
+		if err := s.upsertWorkoutMetricRow(ctx, payload); err != nil {
+			log.Printf("health: failed to replay workout metric %s: %v", id, err)
+			continue
+		}
+		_ = s.deletePendingWorkoutMetric(ctx, id)
+	}
+	return rows.Err()
+}
+
+func (s *Syncer) upsertWorkoutMetricRow(ctx context.Context, payload WorkoutMetricPayload) error {
+	wID, err := uuid.Parse(payload.WorkoutID)
+	if err != nil {
+		return fmt.Errorf("parse workout_id: %w", err)
+	}
+	_, err = s.appDB.ExecContext(ctx, `
+		INSERT INTO workout_metrics (id, workout_id, metric_name, value, unit, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			metric_name = excluded.metric_name,
+			value = excluded.value,
+			unit = excluded.unit`,
+		payload.ID, wID.String(), payload.MetricName, payload.Value, payload.Unit,
+		time.Now().Format(time.RFC3339),
+	)
+	return err
 }

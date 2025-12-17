@@ -142,57 +142,56 @@ Example:
 
 var syncLoginCmd = &cobra.Command{
 	Use:   "login",
-	Short: "Login with existing account",
-	Long: `Login to an existing sync account.
+	Short: "Login to sync server",
+	Long: `Login to sync service with your credentials and recovery phrase.
 
-You'll need your email, password, and recovery phrase.
-
-Example:
-  health sync login`,
+Your recovery phrase is used to derive encryption keys - the server
+never sees your data in plaintext.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Prompt for email
+		reader := bufio.NewReader(os.Stdin)
+
+		// Get email
 		fmt.Print("Email: ")
-		var email string
-		fmt.Scanln(&email)
+		email, _ := reader.ReadString('\n')
 		email = strings.TrimSpace(email)
 		if email == "" {
-			return fmt.Errorf("email is required")
+			return fmt.Errorf("email required")
 		}
 
-		// Prompt for password
+		// Get password
 		fmt.Print("Password: ")
 		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		fmt.Println()
 		if err != nil {
 			return fmt.Errorf("read password: %w", err)
 		}
-		password := strings.TrimSpace(string(passwordBytes))
+		password := string(passwordBytes)
 		if password == "" {
-			return fmt.Errorf("password is required")
+			return fmt.Errorf("password cannot be empty")
 		}
 
-		// Prompt for recovery phrase (need ReadString to capture spaces)
-		fmt.Print("Recovery phrase (24 words): ")
-		reader := bufio.NewReader(os.Stdin)
-		mnemonic, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("read recovery phrase: %w", err)
-		}
+		// Get mnemonic
+		fmt.Print("Recovery phrase (12 or 24 words): ")
+		mnemonic, _ := reader.ReadString('\n')
 		mnemonic = strings.TrimSpace(mnemonic)
-		if mnemonic == "" {
-			return fmt.Errorf("recovery phrase is required")
-		}
 
 		// Validate mnemonic
-		seed, err := vault.ParseSeedPhrase(mnemonic)
+		parsed, err := vault.ParseMnemonic(mnemonic)
 		if err != nil {
-			return fmt.Errorf("invalid recovery phrase: %w", err)
+			return fmt.Errorf("invalid recovery phrase: must be 12 or 24 words")
 		}
+		// Verify it's actually 12 or 24 words
+		wordCount := len(strings.Fields(mnemonic))
+		if wordCount != 12 && wordCount != 24 {
+			return fmt.Errorf("invalid recovery phrase: must be 12 or 24 words")
+		}
+		_ = parsed
 
 		// Generate device ID before login (required by v0.3.0)
 		deviceID := sync.GenerateDeviceID()
 
-		// Login with device ID
+		// Login to server
+		fmt.Printf("\nLogging in to %s...\n", syncServer)
 		ctx := context.Background()
 		authClient := vault.NewPBAuthClient(syncServer)
 		result, err := authClient.Login(ctx, email, password, deviceID)
@@ -200,7 +199,11 @@ Example:
 			return fmt.Errorf("login failed: %w", err)
 		}
 
-		// Convert seed to hex for storage
+		// Derive key from mnemonic
+		seed, err := vault.ParseSeedPhrase(mnemonic)
+		if err != nil {
+			return fmt.Errorf("parse mnemonic: %w", err)
+		}
 		derivedKeyHex := hex.EncodeToString(seed.Raw)
 
 		// Save config
@@ -225,11 +228,11 @@ Example:
 			return fmt.Errorf("create vault db directory: %w", err)
 		}
 
-		color.Green("✓ Login successful!")
-		fmt.Println("Config saved to:", sync.ConfigPath())
-		fmt.Println("Auto-sync: enabled")
-		fmt.Println()
-		fmt.Println("Run 'health sync now' to sync with the server.")
+		color.Green("\n✓ Logged in successfully")
+		fmt.Printf("  User ID: %s\n", cfg.UserID)
+		fmt.Printf("  Device: %s\n", cfg.DeviceID[:8]+"...")
+		fmt.Printf("  Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
+		fmt.Printf("\nRun 'health sync now' to sync your data.\n")
 
 		return nil
 	},
