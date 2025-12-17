@@ -14,9 +14,9 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/sync"
+	"github.com/harperreed/sweet/vault"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-	"github.com/harperreed/sweet/vault"
 )
 
 var (

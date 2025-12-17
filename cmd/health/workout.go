@@ -11,8 +11,8 @@ import (
 	"github.com/harperreed/health/internal/db"
 	"github.com/harperreed/health/internal/models"
 	"github.com/harperreed/health/internal/sync"
-	"github.com/spf13/cobra"
 	"github.com/harperreed/sweet/vault"
+	"github.com/spf13/cobra"
 )
 
 var (

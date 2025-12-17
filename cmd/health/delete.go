@@ -7,8 +7,8 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/db"
-	"github.com/spf13/cobra"
 	"github.com/harperreed/sweet/vault"
+	"github.com/spf13/cobra"
 )
 
 var deleteCmd = &cobra.Command{

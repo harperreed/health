@@ -204,7 +204,7 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 		},
 		"recent_workouts": workouts,
 		"summary": map[string]int{
-			"total_metric_types":  len(latestMetrics),
+			"total_metric_types":   len(latestMetrics),
 			"recent_workout_count": len(workouts),
 		},
 	}

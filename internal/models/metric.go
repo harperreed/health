@@ -12,7 +12,7 @@ import (
 type MetricType string
 
 const (
-	// Biometrics
+	// Biometrics.
 	MetricWeight      MetricType = "weight"
 	MetricBodyFat     MetricType = "body_fat"
 	MetricBPSys       MetricType = "bp_sys"
@@ -21,19 +21,19 @@ const (
 	MetricHRV         MetricType = "hrv"
 	MetricTemperature MetricType = "temperature"
 
-	// Activity
+	// Activity.
 	MetricSteps          MetricType = "steps"
 	MetricSleepHours     MetricType = "sleep_hours"
 	MetricActiveCalories MetricType = "active_calories"
 
-	// Nutrition
+	// Nutrition.
 	MetricWater    MetricType = "water"
 	MetricCalories MetricType = "calories"
 	MetricProtein  MetricType = "protein"
 	MetricCarbs    MetricType = "carbs"
 	MetricFat      MetricType = "fat"
 
-	// Mental Health
+	// Mental Health.
 	MetricMood       MetricType = "mood"
 	MetricEnergy     MetricType = "energy"
 	MetricStress     MetricType = "stress"
