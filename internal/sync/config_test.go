@@ -35,7 +35,6 @@ func TestLoadConfigNoFile(t *testing.T) {
 	assert.Equal(t, "", cfg.Token)
 	assert.Equal(t, "", cfg.DerivedKey)
 	assert.NotEmpty(t, cfg.VaultDB) // Should have default path
-	assert.False(t, cfg.AutoSync)
 }
 
 func TestSaveAndLoadConfig(t *testing.T) {
@@ -60,7 +59,6 @@ func TestSaveAndLoadConfig(t *testing.T) {
 		DerivedKey:   "test-derived-key-hex",
 		DeviceID:     "device-123",
 		VaultDB:      filepath.Join(tmpDir, "vault.db"),
-		AutoSync:     true,
 	}
 
 	// Save config
@@ -82,7 +80,6 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	assert.Equal(t, cfg.DerivedKey, loaded.DerivedKey)
 	assert.Equal(t, cfg.DeviceID, loaded.DeviceID)
 	assert.Equal(t, cfg.VaultDB, loaded.VaultDB)
-	assert.Equal(t, cfg.AutoSync, loaded.AutoSync)
 }
 
 func TestConfigDirXDG(t *testing.T) {

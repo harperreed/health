@@ -50,10 +50,7 @@ COMMANDS:
   now         Manually sync (push local changes, pull remote)
   logout      Clear sync credentials
 
-AUTO-SYNC:
-
-  When auto-sync is enabled (default after login), changes sync immediately
-  after each add/delete operation. Disable with 'health sync auto off'.`,
+Changes sync automatically after each add/delete operation when configured.`,
 }
 
 var syncRegisterCmd = &cobra.Command{
@@ -115,7 +112,6 @@ Example:
 			DerivedKey:   derivedKeyHex,
 			DeviceID:     deviceID,
 			VaultDB:      sync.VaultDBPath(),
-			AutoSync:     true,
 		}
 
 		if err := sync.SaveConfig(cfg); err != nil {
@@ -134,7 +130,6 @@ Example:
 		color.Cyan("  " + result.Mnemonic)
 		fmt.Println()
 		fmt.Println("Config saved to:", sync.ConfigPath())
-		fmt.Println("Auto-sync: enabled")
 
 		return nil
 	},
@@ -216,7 +211,6 @@ never sees your data in plaintext.`,
 			DerivedKey:   derivedKeyHex,
 			DeviceID:     deviceID,
 			VaultDB:      sync.VaultDBPath(),
-			AutoSync:     true,
 		}
 
 		if err := sync.SaveConfig(cfg); err != nil {
@@ -232,8 +226,23 @@ never sees your data in plaintext.`,
 		fmt.Printf("  User ID: %s\n", cfg.UserID)
 		fmt.Printf("  Device: %s\n", cfg.DeviceID[:8]+"...")
 		fmt.Printf("  Token expires: %s\n", result.Token.Expires.Format(time.RFC3339))
-		fmt.Printf("\nRun 'health sync now' to sync your data.\n")
 
+		// Sync immediately after login to pull existing data
+		fmt.Println("\nSyncing...")
+		syncer, err := sync.NewSyncer(cfg, dbConn)
+		if err != nil {
+			color.Yellow("⚠ Could not initialize sync: %v", err)
+			return nil
+		}
+		defer func() { _ = syncer.Close() }()
+
+		if err := syncer.Sync(context.Background()); err != nil {
+			color.Yellow("⚠ Sync failed: %v", err)
+			fmt.Println("You can manually sync later with 'health sync now'")
+			return nil
+		}
+
+		color.Green("✓ Sync complete")
 		return nil
 	},
 }
@@ -262,7 +271,6 @@ var syncStatusCmd = &cobra.Command{
 		fmt.Println("Server:", cfg.Server)
 		fmt.Println("User ID:", cfg.UserID)
 		fmt.Println("Device ID:", cfg.DeviceID)
-		fmt.Println("Auto-sync:", cfg.AutoSync)
 		fmt.Println()
 
 		// Create syncer to check status
@@ -380,44 +388,6 @@ You can login again with your recovery phrase.`,
 	},
 }
 
-var syncAutoCmd = &cobra.Command{
-	Use:   "auto [on|off]",
-	Short: "Enable or disable auto-sync",
-	Long: `Enable or disable automatic sync after each mutation.
-
-With auto-sync on, changes sync immediately after each add/delete.
-With auto-sync off, you need to manually run 'health sync now'.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := sync.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
-		}
-
-		switch strings.ToLower(args[0]) {
-		case "on", "true", "1":
-			cfg.AutoSync = true
-		case "off", "false", "0":
-			cfg.AutoSync = false
-		default:
-			return fmt.Errorf("invalid value: use 'on' or 'off'")
-		}
-
-		if err := sync.SaveConfig(cfg); err != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-
-		if cfg.AutoSync {
-			color.Green("✓ Auto-sync enabled")
-		} else {
-			color.Yellow("✓ Auto-sync disabled")
-			fmt.Println("Run 'health sync now' to sync manually.")
-		}
-
-		return nil
-	},
-}
-
 const defaultSyncServer = "https://api.storeusa.org"
 
 func init() {
@@ -428,7 +398,6 @@ func init() {
 	syncCmd.AddCommand(syncStatusCmd)
 	syncCmd.AddCommand(syncNowCmd)
 	syncCmd.AddCommand(syncLogoutCmd)
-	syncCmd.AddCommand(syncAutoCmd)
 
 	rootCmd.AddCommand(syncCmd)
 }

@@ -20,7 +20,6 @@ type Config struct {
 	DerivedKey   string `json:"derived_key"` // hex-encoded seed, NOT the mnemonic
 	DeviceID     string `json:"device_id"`
 	VaultDB      string `json:"vault_db"`
-	AutoSync     bool   `json:"auto_sync"` // Sync automatically after each write
 }
 
 // ConfigDir returns the XDG config directory for health sync.
@@ -34,7 +33,14 @@ func ConfigDir() string {
 
 // ConfigPath returns the path to the sync config file.
 func ConfigPath() string {
-	return filepath.Join(ConfigDir(), "sync.json")
+	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
+		return filepath.Join(xdgConfig, "health", "sync.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".config", "health", "sync.json")
 }
 
 // VaultDBPath returns the default path for the vault database.

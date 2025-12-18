@@ -113,14 +113,15 @@ func NewSyncer(cfg *Config, appDB *sql.DB) (*Syncer, error) {
 		},
 	})
 
-	return &Syncer{
-		config:      cfg,
-		store:       store,
-		keys:        keys,
-		client:      client,
-		vaultSyncer: vault.NewSyncer(store, client, keys, cfg.UserID),
-		appDB:       appDB,
-	}, nil
+	syncer := &Syncer{
+		config: cfg,
+		store:  store,
+		keys:   keys,
+		client: client,
+		appDB:  appDB,
+	}
+	syncer.vaultSyncer = vault.NewSyncer(store, client, keys, cfg.UserID, syncer.applyChange)
+	return syncer, nil
 }
 
 // Close closes the vault store.
@@ -174,34 +175,37 @@ func (s *Syncer) enqueueChange(ctx context.Context, entity, entityID string, op 
 		return fmt.Errorf("vault sync not configured")
 	}
 
-	if _, err := s.vaultSyncer.QueueChange(ctx, entity, entityID, op, payload); err != nil {
+	if _, err := s.vaultSyncer.QueueAndSync(ctx, entity, entityID, op, payload); err != nil {
 		return fmt.Errorf("queue change: %w", err)
-	}
-
-	// Auto-sync if enabled
-	if s.config.AutoSync {
-		return s.Sync(ctx)
 	}
 	return nil
 }
 
 // Sync pushes local changes and pulls remote updates.
 func (s *Syncer) Sync(ctx context.Context) error {
+	if !s.vaultSyncer.CanSync() {
+		return fmt.Errorf("sync not configured")
+	}
+
 	// Ensure token is valid before syncing
 	if err := s.client.EnsureValidToken(ctx); err != nil {
 		return fmt.Errorf("token expired - run 'health sync login': %w", err)
 	}
 
-	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange)
+	return s.vaultSyncer.Sync(ctx)
 }
 
 // SyncWithEvents syncs with progress callbacks.
 func (s *Syncer) SyncWithEvents(ctx context.Context, events *vault.SyncEvents) error {
+	if !s.vaultSyncer.CanSync() {
+		return fmt.Errorf("sync not configured")
+	}
+
 	if err := s.client.EnsureValidToken(ctx); err != nil {
 		return fmt.Errorf("token expired - run 'health sync login': %w", err)
 	}
 
-	return vault.Sync(ctx, s.store, s.client, s.keys, s.config.UserID, s.applyChange, events)
+	return s.vaultSyncer.Sync(ctx, events)
 }
 
 // Status returns the current sync status.
