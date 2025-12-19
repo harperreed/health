@@ -45,7 +45,7 @@ func InitClient() (*Client, error) {
 			return
 		}
 
-		db, err := kv.OpenWithDefaults(dbName)
+		db, err := kv.OpenWithDefaultsFallback(dbName)
 		if err != nil {
 			clientErr = err
 			return
@@ -56,8 +56,10 @@ func InitClient() (*Client, error) {
 			autoSync: true,
 		}
 
-		// Pull remote data on startup
-		_ = db.Sync()
+		// Pull remote data on startup (skip in read-only mode)
+		if !db.IsReadOnly() {
+			_ = db.Sync()
+		}
 	})
 
 	return globalClient, clientErr
@@ -78,16 +80,25 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// IsReadOnly returns true if the database is open in read-only mode.
+// This happens when another process (like an MCP server) holds the lock.
+func (c *Client) IsReadOnly() bool {
+	return c.kv.IsReadOnly()
+}
+
 // Sync synchronizes local state with Charm Cloud.
 func (c *Client) Sync() error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.kv.IsReadOnly() {
+		return nil
+	}
 	return c.kv.Sync()
 }
 
 // syncIfEnabled calls Sync if autoSync is enabled.
 func (c *Client) syncIfEnabled() {
-	if c.autoSync {
+	if c.autoSync && !c.kv.IsReadOnly() {
 		_ = c.kv.Sync()
 	}
 }
@@ -120,6 +131,10 @@ func (c *Client) set(key string, data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
+
 	if err := c.kv.Set([]byte(key), data); err != nil {
 		return err
 	}
@@ -131,6 +146,10 @@ func (c *Client) set(key string, data []byte) error {
 func (c *Client) delete(key string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
 
 	if err := c.kv.Delete([]byte(key)); err != nil {
 		return err
@@ -214,6 +233,10 @@ func (c *Client) getByIDPrefix(typePrefix, idPrefix string) ([]byte, error) {
 func (c *Client) deleteByIDPrefix(typePrefix, idPrefix string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.kv.IsReadOnly() {
+		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
+	}
 
 	// First find the full key
 	var fullKey []byte
