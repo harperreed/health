@@ -1,18 +1,16 @@
 // ABOUTME: Root Cobra command for health CLI.
-// ABOUTME: Handles database lifecycle via PersistentPre/PostRunE.
+// ABOUTME: Handles Charm client lifecycle via PersistentPre/PostRunE.
 package main
 
 import (
-	"database/sql"
 	"fmt"
 
-	"github.com/harperreed/health/internal/db"
+	"github.com/harperreed/health/internal/charm"
 	"github.com/spf13/cobra"
 )
 
 var (
-	dbPath string
-	dbConn *sql.DB
+	charmClient *charm.Client
 )
 
 var rootCmd = &cobra.Command{
@@ -41,14 +39,14 @@ WORKOUTS:
   $ health workout metric abc123 km 5.2     # Add distance to workout
   $ health workout show abc123              # View workout details
 
-SYNC (E2E ENCRYPTED):
+SYNC (AUTOMATIC):
 
-  Sync health data across devices with end-to-end encryption.
+  Sync health data across devices using Charm Cloud.
+  Data is E2E encrypted with your SSH key.
 
-  $ health sync register    # Create account (saves recovery phrase)
-  $ health sync login       # Login on another device
-  $ health sync status      # Check sync status
-  $ health sync now         # Manual sync
+  $ health sync link      # Link device to your Charm account
+  $ health sync status    # Check sync status
+  $ health sync wipe      # Reset local data from cloud
 
 MCP INTEGRATION:
 
@@ -64,30 +62,29 @@ MCP INTEGRATION:
 
 DATA STORAGE:
 
-  Metrics are stored in SQLite at ~/.local/share/health/health.db
-  Use --db to specify an alternate location.`,
+  Metrics are stored in Charm KV at ~/.local/share/charm/kv/health.
+  Sync is automatic on each write operation.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip DB init for commands that don't need it
+		// Skip charm init for commands that don't need it
 		if cmd.Name() == "version" || cmd.Name() == "help" {
 			return nil
 		}
 
 		var err error
-		dbConn, err = db.InitDB(dbPath)
+		charmClient, err = charm.InitClient()
 		if err != nil {
-			return fmt.Errorf("failed to initialize database: %w", err)
+			return fmt.Errorf("failed to initialize charm client: %w", err)
 		}
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-		if dbConn != nil {
-			return dbConn.Close()
+		if charmClient != nil {
+			return charmClient.Close()
 		}
 		return nil
 	},
 }
 
 func init() {
-	defaultPath := db.GetDefaultDBPath()
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", defaultPath, "database file path")
+	// No persistent flags needed - Charm handles data location automatically
 }

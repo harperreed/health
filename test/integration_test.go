@@ -1,4 +1,4 @@
-// ABOUTME: Integration tests for health CLI.
+// ABOUTME: Integration tests for health CLI with Charm KV backend.
 // ABOUTME: Tests full workflow from CLI commands.
 package test
 
@@ -10,7 +10,14 @@ import (
 	"testing"
 )
 
+// TestFullWorkflow tests the complete health CLI workflow.
+// NOTE: This test requires a configured Charm account.
+// Skip if SKIP_CHARM_TESTS is set.
 func TestFullWorkflow(t *testing.T) {
+	if os.Getenv("SKIP_CHARM_TESTS") != "" {
+		t.Skip("Skipping Charm integration tests (SKIP_CHARM_TESTS set)")
+	}
+
 	// Build the binary
 	projectRoot, _ := filepath.Abs("..")
 	healthBinary := filepath.Join(projectRoot, "health")
@@ -22,13 +29,8 @@ func TestFullWorkflow(t *testing.T) {
 	}
 	defer os.Remove(healthBinary)
 
-	// Use temp database
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test.db")
-
 	run := func(args ...string) (string, error) {
-		fullArgs := append([]string{"--db", dbPath}, args...)
-		cmd := exec.Command(healthBinary, fullArgs...)
+		cmd := exec.Command(healthBinary, args...)
 		output, err := cmd.CombinedOutput()
 		return string(output), err
 	}

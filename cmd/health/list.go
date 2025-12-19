@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/harperreed/health/internal/db"
 	"github.com/harperreed/health/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -54,7 +53,7 @@ EXAMPLES:
 			metricType = &mt
 		}
 
-		metrics, err := db.ListMetrics(dbConn, metricType, listLimit)
+		metrics, err := charmClient.ListMetrics(metricType, listLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list metrics: %w", err)
 		}

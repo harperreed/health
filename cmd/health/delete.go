@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/harperreed/health/internal/db"
-	"github.com/harperreed/sweet/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -29,23 +27,18 @@ EXAMPLES:
 CAUTION:
 
   This permanently deletes the metric. There is no undo.
-  If the prefix matches multiple metrics, the first match is deleted.`,
+  If the prefix matches multiple metrics, an error is returned.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		idOrPrefix := args[0]
 
 		// First, try to get the metric to show what we're deleting
-		metric, err := db.GetMetric(dbConn, idOrPrefix)
+		metric, err := charmClient.GetMetric(idOrPrefix)
 		if err != nil {
 			return fmt.Errorf("metric not found: %s", idOrPrefix)
 		}
 
-		// Queue sync delete before local delete
-		if err := queueMetricSync(cmd.Context(), metric, vault.OpDelete); err != nil {
-			color.Yellow("⚠ Sync queue failed: %v", err)
-		}
-
-		if err := db.DeleteMetric(dbConn, idOrPrefix); err != nil {
+		if err := charmClient.DeleteMetric(idOrPrefix); err != nil {
 			return fmt.Errorf("failed to delete metric: %w", err)
 		}
 

@@ -1,22 +1,22 @@
 // ABOUTME: MCP server setup for health metrics store.
-// ABOUTME: Wraps MCP server with database connection.
+// ABOUTME: Wraps MCP server with Charm client connection.
 package mcp
 
 import (
 	"context"
-	"database/sql"
 
+	"github.com/harperreed/health/internal/charm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Server wraps the MCP server with database access.
+// Server wraps the MCP server with Charm client access.
 type Server struct {
 	mcpServer *mcp.Server
-	db        *sql.DB
+	client    *charm.Client
 }
 
-// NewServer creates a new MCP server with the given database connection.
-func NewServer(db *sql.DB) (*Server, error) {
+// NewServer creates a new MCP server with the given Charm client.
+func NewServer(client *charm.Client) (*Server, error) {
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "health",
@@ -27,7 +27,7 @@ func NewServer(db *sql.DB) (*Server, error) {
 
 	s := &Server{
 		mcpServer: mcpServer,
-		db:        db,
+		client:    client,
 	}
 
 	s.registerTools()

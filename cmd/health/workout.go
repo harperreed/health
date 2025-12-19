@@ -3,15 +3,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/fatih/color"
-	"github.com/harperreed/health/internal/db"
 	"github.com/harperreed/health/internal/models"
-	"github.com/harperreed/health/internal/sync"
-	"github.com/harperreed/sweet/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -68,13 +64,8 @@ Examples:
 			w.WithNotes(workoutNotes)
 		}
 
-		if err := db.CreateWorkout(dbConn, w); err != nil {
+		if err := charmClient.CreateWorkout(w); err != nil {
 			return fmt.Errorf("failed to create workout: %w", err)
-		}
-
-		// Queue for sync if configured
-		if err := queueWorkoutSync(cmd.Context(), w, vault.OpUpsert); err != nil {
-			color.Yellow("⚠ Sync queue failed: %v", err)
 		}
 
 		color.Green("✓ Added %s workout", workoutType)
@@ -97,7 +88,7 @@ var workoutListCmd = &cobra.Command{
 			wType = &workoutType
 		}
 
-		workouts, err := db.ListWorkouts(dbConn, wType, workoutLimit)
+		workouts, err := charmClient.ListWorkouts(wType, workoutLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list workouts: %w", err)
 		}
@@ -129,7 +120,7 @@ var workoutShowCmd = &cobra.Command{
 	Short: "Show workout details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		w, err := db.GetWorkoutWithMetrics(dbConn, args[0])
+		w, err := charmClient.GetWorkoutWithMetrics(args[0])
 		if err != nil {
 			return fmt.Errorf("failed to get workout: %w", err)
 		}
@@ -183,23 +174,46 @@ Examples:
 		}
 
 		// Verify workout exists
-		w, err := db.GetWorkout(dbConn, workoutID)
+		w, err := charmClient.GetWorkout(workoutID)
 		if err != nil {
 			return fmt.Errorf("workout not found: %s", workoutID)
 		}
 
 		wm := models.NewWorkoutMetric(w.ID, metricName, value, unit)
-		if err := db.AddWorkoutMetric(dbConn, wm); err != nil {
+		if err := charmClient.AddWorkoutMetric(wm); err != nil {
 			return fmt.Errorf("failed to add workout metric: %w", err)
-		}
-
-		// Queue for sync if configured
-		if err := queueWorkoutMetricSync(cmd.Context(), wm, vault.OpUpsert); err != nil {
-			color.Yellow("⚠ Sync queue failed: %v", err)
 		}
 
 		color.Green("✓ Added %s to workout", metricName)
 		fmt.Printf("  %.2f %s\n", value, unit)
+
+		return nil
+	},
+}
+
+var workoutDeleteCmd = &cobra.Command{
+	Use:     "delete <id>",
+	Aliases: []string{"del", "rm"},
+	Short:   "Delete a workout",
+	Long: `Delete a workout and all its metrics.
+
+CAUTION: This permanently deletes the workout and all associated metrics.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		idOrPrefix := args[0]
+
+		// Get workout to show what we're deleting
+		w, err := charmClient.GetWorkout(idOrPrefix)
+		if err != nil {
+			return fmt.Errorf("workout not found: %s", idOrPrefix)
+		}
+
+		if err := charmClient.DeleteWorkout(idOrPrefix); err != nil {
+			return fmt.Errorf("failed to delete workout: %w", err)
+		}
+
+		color.Yellow("✗ Deleted %s workout", w.WorkoutType)
+		fmt.Printf("  %s\n", color.New(color.Faint).Sprint(w.ID.String()[:8]))
 
 		return nil
 	},
@@ -216,45 +230,6 @@ func init() {
 	workoutCmd.AddCommand(workoutListCmd)
 	workoutCmd.AddCommand(workoutShowCmd)
 	workoutCmd.AddCommand(workoutMetricCmd)
+	workoutCmd.AddCommand(workoutDeleteCmd)
 	rootCmd.AddCommand(workoutCmd)
-}
-
-// queueWorkoutSync queues a workout change for sync if configured.
-func queueWorkoutSync(ctx context.Context, w *models.Workout, op vault.Op) error {
-	cfg, err := sync.LoadConfig()
-	if err != nil {
-		return nil // No config, skip silently
-	}
-
-	if !cfg.IsConfigured() {
-		return nil // Not configured, skip silently
-	}
-
-	syncer, err := sync.NewSyncer(cfg, dbConn)
-	if err != nil {
-		return fmt.Errorf("create syncer: %w", err)
-	}
-	defer func() { _ = syncer.Close() }()
-
-	return syncer.QueueWorkoutChange(ctx, w, op)
-}
-
-// queueWorkoutMetricSync queues a workout metric change for sync if configured.
-func queueWorkoutMetricSync(ctx context.Context, wm *models.WorkoutMetric, op vault.Op) error {
-	cfg, err := sync.LoadConfig()
-	if err != nil {
-		return nil // No config, skip silently
-	}
-
-	if !cfg.IsConfigured() {
-		return nil // Not configured, skip silently
-	}
-
-	syncer, err := sync.NewSyncer(cfg, dbConn)
-	if err != nil {
-		return fmt.Errorf("create syncer: %w", err)
-	}
-	defer func() { _ = syncer.Close() }()
-
-	return syncer.QueueWorkoutMetricChange(ctx, wm, op)
 }

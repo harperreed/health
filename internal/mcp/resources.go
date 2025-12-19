@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/harperreed/health/internal/db"
 	"github.com/harperreed/health/internal/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -43,13 +42,13 @@ func (s *Server) registerResources() {
 
 func (s *Server) handleRecentResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	// Get last 10 metrics
-	metrics, err := db.ListMetrics(s.db, nil, 10)
+	metrics, err := s.client.ListMetrics(nil, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
 
 	// Get last 5 workouts
-	workouts, err := db.ListWorkouts(s.db, nil, 5)
+	workouts, err := s.client.ListWorkouts(nil, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workouts: %w", err)
 	}
@@ -79,7 +78,7 @@ func (s *Server) handleTodayResource(ctx context.Context, req *mcp.ReadResourceR
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	// Get all metrics and filter by today
-	metrics, err := db.ListMetrics(s.db, nil, 1000)
+	metrics, err := s.client.ListMetrics(nil, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -92,7 +91,7 @@ func (s *Server) handleTodayResource(ctx context.Context, req *mcp.ReadResourceR
 	}
 
 	// Get all workouts and filter by today
-	workouts, err := db.ListWorkouts(s.db, nil, 1000)
+	workouts, err := s.client.ListWorkouts(nil, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workouts: %w", err)
 	}
@@ -132,7 +131,7 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 	// Get latest value for each metric type
 	latestMetrics := make(map[string]interface{})
 	for _, mt := range models.AllMetricTypes {
-		metrics, err := db.ListMetrics(s.db, &mt, 1)
+		metrics, err := s.client.ListMetrics(&mt, 1)
 		if err == nil && len(metrics) > 0 {
 			m := metrics[0]
 			latestMetrics[string(mt)] = map[string]interface{}{
@@ -145,7 +144,7 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 	}
 
 	// Get recent workouts (last 10)
-	workouts, err := db.ListWorkouts(s.db, nil, 10)
+	workouts, err := s.client.ListWorkouts(nil, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workouts: %w", err)
 	}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/harperreed/health/internal/db"
 	"github.com/harperreed/health/internal/models"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -153,7 +152,7 @@ func (s *Server) handleAddMetric(ctx context.Context, req *mcp.CallToolRequest, 
 		m.WithNotes(input.Notes)
 	}
 
-	if err := db.CreateMetric(s.db, m); err != nil {
+	if err := s.client.CreateMetric(m); err != nil {
 		return nil, metricOutput{}, fmt.Errorf("failed to create metric: %w", err)
 	}
 
@@ -177,7 +176,7 @@ func (s *Server) handleListMetrics(ctx context.Context, req *mcp.CallToolRequest
 		metricType = &mt
 	}
 
-	metrics, err := db.ListMetrics(s.db, metricType, input.Limit)
+	metrics, err := s.client.ListMetrics(metricType, input.Limit)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -190,7 +189,7 @@ func (s *Server) handleListMetrics(ctx context.Context, req *mcp.CallToolRequest
 }
 
 func (s *Server) handleDeleteMetric(ctx context.Context, req *mcp.CallToolRequest, input deleteMetricInput) (*mcp.CallToolResult, simpleOutput, error) {
-	if err := db.DeleteMetric(s.db, input.ID); err != nil {
+	if err := s.client.DeleteMetric(input.ID); err != nil {
 		return nil, simpleOutput{}, fmt.Errorf("failed to delete metric: %w", err)
 	}
 
@@ -208,7 +207,7 @@ func (s *Server) handleAddWorkout(ctx context.Context, req *mcp.CallToolRequest,
 		w.WithNotes(input.Notes)
 	}
 
-	if err := db.CreateWorkout(s.db, w); err != nil {
+	if err := s.client.CreateWorkout(w); err != nil {
 		return nil, workoutOutput{}, fmt.Errorf("failed to create workout: %w", err)
 	}
 
@@ -220,13 +219,13 @@ func (s *Server) handleAddWorkout(ctx context.Context, req *mcp.CallToolRequest,
 }
 
 func (s *Server) handleAddWorkoutMetric(ctx context.Context, req *mcp.CallToolRequest, input addWorkoutMetricInput) (*mcp.CallToolResult, simpleOutput, error) {
-	w, err := db.GetWorkout(s.db, input.WorkoutID)
+	w, err := s.client.GetWorkout(input.WorkoutID)
 	if err != nil {
 		return nil, simpleOutput{}, fmt.Errorf("workout not found: %s", input.WorkoutID)
 	}
 
 	wm := models.NewWorkoutMetric(w.ID, input.MetricName, input.Value, input.Unit)
-	if err := db.AddWorkoutMetric(s.db, wm); err != nil {
+	if err := s.client.AddWorkoutMetric(wm); err != nil {
 		return nil, simpleOutput{}, fmt.Errorf("failed to add workout metric: %w", err)
 	}
 
@@ -245,7 +244,7 @@ func (s *Server) handleListWorkouts(ctx context.Context, req *mcp.CallToolReques
 		workoutType = &input.WorkoutType
 	}
 
-	workouts, err := db.ListWorkouts(s.db, workoutType, input.Limit)
+	workouts, err := s.client.ListWorkouts(workoutType, input.Limit)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list workouts: %w", err)
 	}
@@ -258,7 +257,7 @@ func (s *Server) handleListWorkouts(ctx context.Context, req *mcp.CallToolReques
 }
 
 func (s *Server) handleGetWorkout(ctx context.Context, req *mcp.CallToolRequest, input getWorkoutInput) (*mcp.CallToolResult, any, error) {
-	w, err := db.GetWorkoutWithMetrics(s.db, input.ID)
+	w, err := s.client.GetWorkoutWithMetrics(input.ID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("workout not found: %s", input.ID)
 	}
@@ -267,7 +266,7 @@ func (s *Server) handleGetWorkout(ctx context.Context, req *mcp.CallToolRequest,
 }
 
 func (s *Server) handleDeleteWorkout(ctx context.Context, req *mcp.CallToolRequest, input getWorkoutInput) (*mcp.CallToolResult, simpleOutput, error) {
-	if err := db.DeleteWorkout(s.db, input.ID); err != nil {
+	if err := s.client.DeleteWorkout(input.ID); err != nil {
 		return nil, simpleOutput{}, fmt.Errorf("failed to delete workout: %w", err)
 	}
 
@@ -288,7 +287,7 @@ func (s *Server) handleGetLatest(ctx context.Context, req *mcp.CallToolRequest, 
 	results := make(map[string]interface{})
 	for _, t := range types {
 		mt := models.MetricType(t)
-		metrics, err := db.ListMetrics(s.db, &mt, 1)
+		metrics, err := s.client.ListMetrics(&mt, 1)
 		if err == nil && len(metrics) > 0 {
 			results[t] = map[string]interface{}{
 				"value":       metrics[0].Value,
