@@ -8,13 +8,6 @@ import (
 	"github.com/harperreed/health/internal/models"
 )
 
-// NOTE: These tests require a configured Charm account.
-// Skip if SKIP_CHARM_TESTS is set.
-func skipIfNoCharm(t *testing.T) {
-	t.Helper()
-	// TODO: Add proper detection of Charm availability
-}
-
 func TestMetricKeyFormat(t *testing.T) {
 	m := models.NewMetric(models.MetricWeight, 82.5)
 	key := MetricPrefix + m.ID.String()

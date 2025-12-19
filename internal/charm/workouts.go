@@ -70,7 +70,7 @@ func (c *Client) ListWorkouts(workoutType *string, limit int) ([]*models.Workout
 		return nil, fmt.Errorf("list workouts: %w", err)
 	}
 
-	var workouts []*models.Workout
+	workouts := make([]*models.Workout, 0, len(allData))
 	for _, data := range allData {
 		w, err := unmarshalJSON[models.Workout](data)
 		if err != nil {

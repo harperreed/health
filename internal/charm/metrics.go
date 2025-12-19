@@ -42,7 +42,7 @@ func (c *Client) ListMetrics(metricType *models.MetricType, limit int) ([]*model
 		return nil, fmt.Errorf("list metrics: %w", err)
 	}
 
-	var metrics []*models.Metric
+	metrics := make([]*models.Metric, 0, len(allData))
 	for _, data := range allData {
 		m, err := unmarshalJSON[models.Metric](data)
 		if err != nil {

@@ -162,7 +162,7 @@ Use this to:
 		var confirm string
 		fmt.Scanln(&confirm)
 		if confirm != "WIPE" {
-			fmt.Println("Cancelled.")
+			fmt.Println("Canceled.")
 			return nil
 		}
 

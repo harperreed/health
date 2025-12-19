@@ -40,7 +40,10 @@ type Client struct {
 func InitClient() (*Client, error) {
 	clientOnce.Do(func() {
 		// Set server before opening KV
-		os.Setenv("CHARM_HOST", charmHost)
+		if err := os.Setenv("CHARM_HOST", charmHost); err != nil {
+			clientErr = err
+			return
+		}
 
 		db, err := kv.OpenWithDefaults(dbName)
 		if err != nil {
@@ -122,13 +125,6 @@ func (c *Client) set(key string, data []byte) error {
 	}
 	c.syncIfEnabled()
 	return nil
-}
-
-// get retrieves a value by key.
-func (c *Client) get(key string) ([]byte, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.kv.Get([]byte(key))
 }
 
 // delete removes a key.
@@ -252,29 +248,6 @@ func (c *Client) deleteByIDPrefix(typePrefix, idPrefix string) error {
 	}
 	c.syncIfEnabled()
 	return nil
-}
-
-// listKeysByPrefix returns all keys matching the given prefix.
-func (c *Client) listKeysByPrefix(prefix string) ([]string, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var keys []string
-	prefixBytes := []byte(prefix)
-
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
-
-		for it.Seek(prefixBytes); it.ValidForPrefix(prefixBytes); it.Next() {
-			keys = append(keys, string(it.Item().KeyCopy(nil)))
-		}
-		return nil
-	})
-
-	return keys, err
 }
 
 // unmarshalJSON is a helper to unmarshal JSON data.
