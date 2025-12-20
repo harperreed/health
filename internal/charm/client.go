@@ -3,6 +3,7 @@
 package charm
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/charmbracelet/charm/client"
 	"github.com/charmbracelet/charm/kv"
-	"github.com/dgraph-io/badger/v3"
 )
 
 const (
@@ -166,24 +166,24 @@ func (c *Client) listByPrefix(prefix string) ([][]byte, error) {
 	var results [][]byte
 	prefixBytes := []byte(prefix)
 
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 100
-		it := txn.NewIterator(opts)
-		defer it.Close()
+	// Get all keys from the database
+	keys, err := c.kv.Keys()
+	if err != nil {
+		return nil, err
+	}
 
-		for it.Seek(prefixBytes); it.ValidForPrefix(prefixBytes); it.Next() {
-			item := it.Item()
-			val, err := item.ValueCopy(nil)
+	// Filter keys by prefix and retrieve their values
+	for _, key := range keys {
+		if bytes.HasPrefix(key, prefixBytes) {
+			val, err := c.kv.Get(key)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			results = append(results, val)
 		}
-		return nil
-	})
+	}
 
-	return results, err
+	return results, nil
 }
 
 // getByIDPrefix retrieves a single value by ID prefix match.
@@ -195,28 +195,24 @@ func (c *Client) getByIDPrefix(typePrefix, idPrefix string) ([]byte, error) {
 	var matches [][]byte
 	searchPrefix := []byte(typePrefix + idPrefix)
 
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 10
-		it := txn.NewIterator(opts)
-		defer it.Close()
+	// Get all keys from the database
+	keys, err := c.kv.Keys()
+	if err != nil {
+		return nil, err
+	}
 
-		for it.Seek(searchPrefix); it.ValidForPrefix(searchPrefix); it.Next() {
-			item := it.Item()
-			val, err := item.ValueCopy(nil)
+	// Find keys matching the search prefix
+	for _, key := range keys {
+		if bytes.HasPrefix(key, searchPrefix) {
+			val, err := c.kv.Get(key)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			matches = append(matches, val)
 			if len(matches) > 1 {
 				break
 			}
 		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
 	}
 
 	if len(matches) == 0 {
@@ -242,29 +238,27 @@ func (c *Client) deleteByIDPrefix(typePrefix, idPrefix string) error {
 	var fullKey []byte
 	searchPrefix := []byte(typePrefix + idPrefix)
 
-	err := c.kv.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
+	// Get all keys from the database
+	keys, err := c.kv.Keys()
+	if err != nil {
+		return err
+	}
 
-		var matches [][]byte
-		for it.Seek(searchPrefix); it.ValidForPrefix(searchPrefix); it.Next() {
-			matches = append(matches, it.Item().KeyCopy(nil))
+	// Find keys matching the search prefix
+	var matches [][]byte
+	for _, key := range keys {
+		if bytes.HasPrefix(key, searchPrefix) {
+			matches = append(matches, key)
 			if len(matches) > 1 {
 				return fmt.Errorf("ambiguous prefix %s: matches multiple records", idPrefix)
 			}
 		}
-		if len(matches) == 0 {
-			return fmt.Errorf("not found: %s", idPrefix)
-		}
-		fullKey = matches[0]
-		return nil
-	})
-
-	if err != nil {
-		return err
 	}
+
+	if len(matches) == 0 {
+		return fmt.Errorf("not found: %s", idPrefix)
+	}
+	fullKey = matches[0]
 
 	if err := c.kv.Delete(fullKey); err != nil {
 		return err
