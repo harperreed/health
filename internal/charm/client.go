@@ -1,5 +1,6 @@
-// ABOUTME: Charm KV client wrapper for health metrics storage.
-// ABOUTME: Provides thread-safe initialization and automatic cloud sync.
+// ABOUTME: Charm KV client wrapper using transactional Do API
+// ABOUTME: Short-lived connections to avoid lock contention with other MCP servers
+
 package charm
 
 import (
@@ -8,213 +9,218 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/charmbracelet/charm/client"
 	"github.com/charmbracelet/charm/kv"
+	charmproto "github.com/charmbracelet/charm/proto"
 )
 
 const (
-	dbName    = "health"
-	charmHost = "charm.2389.dev"
+	// DBName is the name of the charm kv database for health.
+	DBName = "health"
 
 	MetricPrefix        = "metric:"
 	WorkoutPrefix       = "workout:"
 	WorkoutMetricPrefix = "workout_metric:"
 )
 
-var (
-	globalClient *Client
-	clientOnce   sync.Once
-	clientErr    error
-)
-
+// Client holds configuration for KV operations.
+// Unlike the previous implementation, it does NOT hold a persistent connection.
+// Each operation opens the database, performs the operation, and closes it.
 type Client struct {
-	kv       *kv.KV
+	dbName   string
 	autoSync bool
-	mu       sync.RWMutex
 }
 
-// InitClient initializes the global Charm client.
-// Thread-safe; can be called multiple times.
-func InitClient() (*Client, error) {
-	clientOnce.Do(func() {
-		// Set server before opening KV
-		if err := os.Setenv("CHARM_HOST", charmHost); err != nil {
-			clientErr = err
-			return
-		}
+// Option configures a Client.
+type Option func(*Client)
 
-		db, err := kv.OpenWithDefaultsFallback(dbName)
-		if err != nil {
-			clientErr = err
-			return
-		}
-
-		globalClient = &Client{
-			kv:       db,
-			autoSync: true,
-		}
-
-		// Pull remote data on startup (skip in read-only mode)
-		if !db.IsReadOnly() {
-			_ = db.Sync()
-		}
-	})
-
-	return globalClient, clientErr
-}
-
-// GetClient returns the global client, initializing if needed.
-func GetClient() (*Client, error) {
-	return InitClient()
-}
-
-// Close closes the KV database connection.
-func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.kv != nil {
-		return c.kv.Close()
-	}
-	return nil
-}
-
-// IsReadOnly returns true if the database is open in read-only mode.
-// This happens when another process (like an MCP server) holds the lock.
-func (c *Client) IsReadOnly() bool {
-	return c.kv.IsReadOnly()
-}
-
-// Sync synchronizes local state with Charm Cloud.
-func (c *Client) Sync() error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.kv.IsReadOnly() {
-		return nil
-	}
-	return c.kv.Sync()
-}
-
-// syncIfEnabled calls Sync if autoSync is enabled.
-func (c *Client) syncIfEnabled() {
-	if c.autoSync && !c.kv.IsReadOnly() {
-		_ = c.kv.Sync()
+// WithDBName sets the database name.
+func WithDBName(name string) Option {
+	return func(c *Client) {
+		c.dbName = name
 	}
 }
 
-// SetAutoSync enables or disables automatic sync after writes.
-func (c *Client) SetAutoSync(enabled bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.autoSync = enabled
+// WithAutoSync enables or disables auto-sync after writes.
+func WithAutoSync(enabled bool) Option {
+	return func(c *Client) {
+		c.autoSync = enabled
+	}
 }
 
-// ID returns the Charm user ID for the current account.
-func (c *Client) ID() (string, error) {
-	cc, err := client.NewClientWithDefaults()
-	if err != nil {
-		return "", fmt.Errorf("create charm client: %w", err)
-	}
-	return cc.ID()
-}
-
-// Reset wipes local data and rebuilds from Charm Cloud.
-func (c *Client) Reset() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.kv.Reset()
-}
-
-// set stores a value with the given key.
-func (c *Client) set(key string, data []byte) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.kv.IsReadOnly() {
-		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
-	}
-
-	if err := c.kv.Set([]byte(key), data); err != nil {
-		return err
-	}
-	c.syncIfEnabled()
-	return nil
-}
-
-// delete removes a key.
-func (c *Client) delete(key string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.kv.IsReadOnly() {
-		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
-	}
-
-	if err := c.kv.Delete([]byte(key)); err != nil {
-		return err
-	}
-	c.syncIfEnabled()
-	return nil
-}
-
-// listByPrefix returns all values with keys matching the given prefix.
-func (c *Client) listByPrefix(prefix string) ([][]byte, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	var results [][]byte
-	prefixBytes := []byte(prefix)
-
-	// Get all keys from the database
-	keys, err := c.kv.Keys()
+// NewClient creates a new client with the given options.
+func NewClient(opts ...Option) (*Client, error) {
+	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	// Filter keys by prefix and retrieve their values
-	for _, key := range keys {
-		if bytes.HasPrefix(key, prefixBytes) {
-			val, err := c.kv.Get(key)
-			if err != nil {
-				return nil, err
-			}
-			results = append(results, val)
+	// Set charm host if configured
+	if cfg.CharmHost != "" {
+		if err := os.Setenv("CHARM_HOST", cfg.CharmHost); err != nil {
+			return nil, err
 		}
 	}
 
-	return results, nil
+	c := &Client{
+		dbName:   DBName,
+		autoSync: cfg.AutoSync,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c, nil
+}
+
+// DoReadOnly executes a function with read-only database access.
+// Use this for batch read operations that need multiple Gets.
+func (c *Client) DoReadOnly(fn func(k *kv.KV) error) error {
+	return kv.DoReadOnly(c.dbName, fn)
+}
+
+// Do executes a function with write access to the database.
+// Use this for batch write operations.
+func (c *Client) Do(fn func(k *kv.KV) error) error {
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		if err := fn(k); err != nil {
+			return err
+		}
+		if c.autoSync {
+			return k.Sync()
+		}
+		return nil
+	})
+}
+
+// Sync triggers a manual sync with the charm server.
+func (c *Client) Sync() error {
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		return k.Sync()
+	})
+}
+
+// Reset clears all data (nuclear option).
+func (c *Client) Reset() error {
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		return k.Reset()
+	})
+}
+
+// ID returns the charm user ID for this device.
+func (c *Client) ID() (string, error) {
+	cc, err := client.NewClientWithDefaults()
+	if err != nil {
+		return "", err
+	}
+	return cc.ID()
+}
+
+// User returns the current charm user information.
+func (c *Client) User() (*charmproto.User, error) {
+	cc, err := client.NewClientWithDefaults()
+	if err != nil {
+		return nil, err
+	}
+	return cc.Bio()
+}
+
+// SetAutoSync enables or disables automatic sync after writes.
+func (c *Client) SetAutoSync(enabled bool) {
+	c.autoSync = enabled
+}
+
+// Config returns the current configuration.
+func (c *Client) Config() *Config {
+	cfg, _ := LoadConfig()
+	return cfg
+}
+
+// set stores a value with the given key.
+func (c *Client) set(key string, data []byte) error {
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		if err := k.Set([]byte(key), data); err != nil {
+			return err
+		}
+		if c.autoSync {
+			return k.Sync()
+		}
+		return nil
+	})
+}
+
+// delete removes a key.
+func (c *Client) delete(key string) error {
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		if err := k.Delete([]byte(key)); err != nil {
+			return err
+		}
+		if c.autoSync {
+			return k.Sync()
+		}
+		return nil
+	})
+}
+
+// listByPrefix returns all values with keys matching the given prefix.
+func (c *Client) listByPrefix(prefix string) ([][]byte, error) {
+	var results [][]byte
+	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		prefixBytes := []byte(prefix)
+
+		// Get all keys from the database
+		keys, err := k.Keys()
+		if err != nil {
+			return err
+		}
+
+		// Filter keys by prefix and retrieve their values
+		for _, key := range keys {
+			if bytes.HasPrefix(key, prefixBytes) {
+				val, err := k.Get(key)
+				if err != nil {
+					return err
+				}
+				results = append(results, val)
+			}
+		}
+		return nil
+	})
+	return results, err
 }
 
 // getByIDPrefix retrieves a single value by ID prefix match.
 // Returns error if no match or multiple matches found.
 func (c *Client) getByIDPrefix(typePrefix, idPrefix string) ([]byte, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
 	var matches [][]byte
-	searchPrefix := []byte(typePrefix + idPrefix)
+	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		searchPrefix := []byte(typePrefix + idPrefix)
 
-	// Get all keys from the database
-	keys, err := c.kv.Keys()
+		// Get all keys from the database
+		keys, err := k.Keys()
+		if err != nil {
+			return err
+		}
+
+		// Find keys matching the search prefix
+		for _, key := range keys {
+			if bytes.HasPrefix(key, searchPrefix) {
+				val, err := k.Get(key)
+				if err != nil {
+					return err
+				}
+				matches = append(matches, val)
+				if len(matches) > 1 {
+					break
+				}
+			}
+		}
+		return nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
-
-	// Find keys matching the search prefix
-	for _, key := range keys {
-		if bytes.HasPrefix(key, searchPrefix) {
-			val, err := c.kv.Get(key)
-			if err != nil {
-				return nil, err
-			}
-			matches = append(matches, val)
-			if len(matches) > 1 {
-				break
-			}
-		}
-	}
-
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("not found: %s", idPrefix)
 	}
@@ -227,44 +233,41 @@ func (c *Client) getByIDPrefix(typePrefix, idPrefix string) ([]byte, error) {
 
 // deleteByIDPrefix deletes a record by ID prefix match.
 func (c *Client) deleteByIDPrefix(typePrefix, idPrefix string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		// First find the full key
+		var fullKey []byte
+		searchPrefix := []byte(typePrefix + idPrefix)
 
-	if c.kv.IsReadOnly() {
-		return fmt.Errorf("cannot write: database is locked by another process (MCP server?)")
-	}
+		// Get all keys from the database
+		keys, err := k.Keys()
+		if err != nil {
+			return err
+		}
 
-	// First find the full key
-	var fullKey []byte
-	searchPrefix := []byte(typePrefix + idPrefix)
-
-	// Get all keys from the database
-	keys, err := c.kv.Keys()
-	if err != nil {
-		return err
-	}
-
-	// Find keys matching the search prefix
-	var matches [][]byte
-	for _, key := range keys {
-		if bytes.HasPrefix(key, searchPrefix) {
-			matches = append(matches, key)
-			if len(matches) > 1 {
-				return fmt.Errorf("ambiguous prefix %s: matches multiple records", idPrefix)
+		// Find keys matching the search prefix
+		var matches [][]byte
+		for _, key := range keys {
+			if bytes.HasPrefix(key, searchPrefix) {
+				matches = append(matches, key)
+				if len(matches) > 1 {
+					return fmt.Errorf("ambiguous prefix %s: matches multiple records", idPrefix)
+				}
 			}
 		}
-	}
 
-	if len(matches) == 0 {
-		return fmt.Errorf("not found: %s", idPrefix)
-	}
-	fullKey = matches[0]
+		if len(matches) == 0 {
+			return fmt.Errorf("not found: %s", idPrefix)
+		}
+		fullKey = matches[0]
 
-	if err := c.kv.Delete(fullKey); err != nil {
-		return err
-	}
-	c.syncIfEnabled()
-	return nil
+		if err := k.Delete(fullKey); err != nil {
+			return err
+		}
+		if c.autoSync {
+			return k.Sync()
+		}
+		return nil
+	})
 }
 
 // unmarshalJSON is a helper to unmarshal JSON data.
@@ -285,3 +288,34 @@ func marshalJSON(v any) ([]byte, error) {
 func extractID(key, prefix string) string {
 	return strings.TrimPrefix(key, prefix)
 }
+
+// --- Legacy compatibility layer ---
+// These functions maintain backwards compatibility with existing code.
+
+var globalClient *Client
+
+// InitClient initializes the global charm client.
+// With the new architecture, this just creates a Client instance.
+func InitClient() (*Client, error) {
+	if globalClient != nil {
+		return globalClient, nil
+	}
+	var err error
+	globalClient, err = NewClient()
+	return globalClient, err
+}
+
+// GetClient returns the global client, initializing if needed.
+func GetClient() (*Client, error) {
+	if globalClient != nil {
+		return globalClient, nil
+	}
+	return InitClient()
+}
+
+// Close is a no-op for backwards compatibility.
+// With Do API, connections are automatically closed after each operation.
+func (c *Client) Close() error {
+	return nil
+}
+
