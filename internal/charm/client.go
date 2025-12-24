@@ -318,4 +318,3 @@ func GetClient() (*Client, error) {
 func (c *Client) Close() error {
 	return nil
 }
-
