@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/charm/client"
 	"github.com/charmbracelet/charm/kv"
@@ -28,8 +29,9 @@ const (
 // Unlike the previous implementation, it does NOT hold a persistent connection.
 // Each operation opens the database, performs the operation, and closes it.
 type Client struct {
-	dbName   string
-	autoSync bool
+	dbName         string
+	autoSync       bool
+	staleThreshold time.Duration
 }
 
 // Option configures a Client.
@@ -64,8 +66,9 @@ func NewClient(opts ...Option) (*Client, error) {
 	}
 
 	c := &Client{
-		dbName:   DBName,
-		autoSync: cfg.AutoSync,
+		dbName:         DBName,
+		autoSync:       cfg.AutoSync,
+		staleThreshold: cfg.StaleThreshold,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -75,8 +78,15 @@ func NewClient(opts ...Option) (*Client, error) {
 
 // DoReadOnly executes a function with read-only database access.
 // Use this for batch read operations that need multiple Gets.
+// Automatically syncs if data is stale before executing the function.
 func (c *Client) DoReadOnly(fn func(k *kv.KV) error) error {
-	return kv.DoReadOnly(c.dbName, fn)
+	return kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		// Sync if stale before reading
+		if err := c.syncIfStaleInternal(k); err != nil {
+			return err
+		}
+		return fn(k)
+	})
 }
 
 // Do executes a function with write access to the database.
@@ -98,6 +108,38 @@ func (c *Client) Sync() error {
 	return kv.Do(c.dbName, func(k *kv.KV) error {
 		return k.Sync()
 	})
+}
+
+// LastSyncTime returns the last sync time for the database.
+func (c *Client) LastSyncTime() (time.Time, error) {
+	var lastSync time.Time
+	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		lastSync = k.LastSyncTime()
+		return nil
+	})
+	return lastSync, err
+}
+
+// IsStale returns true if the database hasn't synced within the stale threshold.
+func (c *Client) IsStale() (bool, error) {
+	var isStale bool
+	err := kv.DoReadOnly(c.dbName, func(k *kv.KV) error {
+		isStale = k.IsStale(c.staleThreshold)
+		return nil
+	})
+	return isStale, err
+}
+
+// SyncIfStale syncs with the server if the data is stale.
+func (c *Client) SyncIfStale() error {
+	return kv.Do(c.dbName, func(k *kv.KV) error {
+		return k.SyncIfStale(c.staleThreshold)
+	})
+}
+
+// syncIfStaleInternal is used internally when we already have a KV instance.
+func (c *Client) syncIfStaleInternal(k *kv.KV) error {
+	return k.SyncIfStale(c.staleThreshold)
 }
 
 // Reset clears all data (nuclear option).
