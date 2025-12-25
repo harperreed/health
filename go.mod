@@ -60,4 +60,4 @@ require (
 )
 
 // Using 2389-research fork for stale sync support
-replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.19.0
+replace github.com/charmbracelet/charm => github.com/2389-research/charm v0.20.0
