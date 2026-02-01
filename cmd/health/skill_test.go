@@ -4,10 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestSkillInstallCreatesDirectory verifies that the skill directory is created
@@ -179,59 +182,80 @@ func TestSkillFSReadEmbeddedContent(t *testing.T) {
 }
 
 // TestSkillInstallDirectoryPermissions verifies the created directory has
-// correct permissions.
+// correct permissions by calling installSkill with a temp HOME.
 func TestSkillInstallDirectoryPermissions(t *testing.T) {
 	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	os.Setenv("HOME", tmpHome)
 
-	skillDir := filepath.Join(tmpHome, ".claude", "skills", "health")
+	// Reset the global flag
+	origSkipConfirm := skillSkipConfirm
+	skillSkipConfirm = true
+	t.Cleanup(func() { skillSkipConfirm = origSkipConfirm })
 
-	// Create directory with specific permissions (matching installSkill)
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
-		t.Fatalf("Failed to create skill directory: %v", err)
+	// Create a mock command with captured output
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetIn(strings.NewReader(""))
+
+	// Call the actual installSkill function
+	if err := installSkill(cmd); err != nil {
+		t.Fatalf("installSkill failed: %v", err)
 	}
 
+	skillDir := filepath.Join(tmpHome, ".claude", "skills", "health")
 	info, err := os.Stat(skillDir)
 	if err != nil {
 		t.Fatalf("Failed to stat skill directory: %v", err)
 	}
 
-	// Check that directory is readable and executable by owner
+	// Check that directory is readable and executable by owner (0750)
 	mode := info.Mode()
 	if mode&0700 != 0700 {
 		t.Errorf("Expected directory to be rwx for owner, got %v", mode)
 	}
 }
 
-// TestSkillInstallFilePermissions verifies the created file has correct permissions.
+// TestSkillInstallFilePermissions verifies the created file has correct permissions
+// by calling installSkill with a temp HOME.
 func TestSkillInstallFilePermissions(t *testing.T) {
 	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	os.Setenv("HOME", tmpHome)
 
-	skillDir := filepath.Join(tmpHome, ".claude", "skills", "health")
-	skillPath := filepath.Join(skillDir, "SKILL.md")
+	// Reset the global flag
+	origSkipConfirm := skillSkipConfirm
+	skillSkipConfirm = true
+	t.Cleanup(func() { skillSkipConfirm = origSkipConfirm })
 
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
-		t.Fatalf("Failed to create skill directory: %v", err)
+	// Create a mock command with captured output
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetIn(strings.NewReader(""))
+
+	// Call the actual installSkill function
+	if err := installSkill(cmd); err != nil {
+		t.Fatalf("installSkill failed: %v", err)
 	}
 
-	content, err := skillFS.ReadFile("skill/SKILL.md")
-	if err != nil {
-		t.Fatalf("Failed to read embedded skill: %v", err)
-	}
-
-	// Write with specific permissions (matching installSkill: 0644)
-	if err := os.WriteFile(skillPath, content, 0644); err != nil {
-		t.Fatalf("Failed to write skill file: %v", err)
-	}
-
+	skillPath := filepath.Join(tmpHome, ".claude", "skills", "health", "SKILL.md")
 	info, err := os.Stat(skillPath)
 	if err != nil {
 		t.Fatalf("Failed to stat skill file: %v", err)
 	}
 
-	// Check that file is readable by all, writable by owner only
+	// Check that file is readable and writable by owner only (0600)
 	mode := info.Mode()
 	if mode&0600 != 0600 {
 		t.Errorf("Expected file to be rw for owner, got %v", mode)
+	}
+	// Verify it's NOT world readable (security)
+	if mode&0077 != 0 {
+		t.Errorf("Expected file to NOT be accessible to group/others, got %v", mode)
 	}
 }
 
@@ -287,6 +311,126 @@ func TestSkillSkipConfirmFlag(t *testing.T) {
 	// Check default value
 	if flag.DefValue != "false" {
 		t.Errorf("Expected default value 'false', got %q", flag.DefValue)
+	}
+}
+
+// TestSkillInstallNonInteractiveContext verifies that install-skill detects
+// non-interactive contexts and cancels gracefully.
+func TestSkillInstallNonInteractiveContext(t *testing.T) {
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	os.Setenv("HOME", tmpHome)
+
+	// Ensure skipConfirm is false to test the interactive path
+	origSkipConfirm := skillSkipConfirm
+	skillSkipConfirm = false
+	t.Cleanup(func() { skillSkipConfirm = origSkipConfirm })
+
+	// Override isTerminal to simulate non-TTY
+	origIsTerminal := isTerminal
+	isTerminal = func(fd int) bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	// Create a mock command with captured output and a pipe (non-TTY) input
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+
+	// Use a file-based reader that won't be detected as a terminal
+	r, w, _ := os.Pipe()
+	w.Close() // Close write end immediately to simulate empty/EOF
+	cmd.SetIn(r)
+
+	// Call installSkill - should detect non-interactive and cancel
+	if err := installSkill(cmd); err != nil {
+		t.Fatalf("installSkill failed: %v", err)
+	}
+
+	output := outBuf.String()
+	if !strings.Contains(output, "Non-interactive context detected") {
+		t.Errorf("Expected non-interactive message, got: %s", output)
+	}
+	if !strings.Contains(output, "Installation canceled") {
+		t.Errorf("Expected installation canceled message, got: %s", output)
+	}
+
+	// Verify file was NOT created
+	skillPath := filepath.Join(tmpHome, ".claude", "skills", "health", "SKILL.md")
+	if _, err := os.Stat(skillPath); err == nil {
+		t.Error("Skill file should NOT have been created in non-interactive mode")
+	}
+}
+
+// TestSkillInstallWithYesFlagInNonInteractive verifies that --yes flag works
+// in non-interactive contexts.
+func TestSkillInstallWithYesFlagInNonInteractive(t *testing.T) {
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	os.Setenv("HOME", tmpHome)
+
+	// Set skipConfirm to true (simulating --yes flag)
+	origSkipConfirm := skillSkipConfirm
+	skillSkipConfirm = true
+	t.Cleanup(func() { skillSkipConfirm = origSkipConfirm })
+
+	// Override isTerminal to simulate non-TTY
+	origIsTerminal := isTerminal
+	isTerminal = func(fd int) bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	// Create a mock command
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetIn(strings.NewReader(""))
+
+	// Call installSkill - should succeed with --yes even in non-interactive
+	if err := installSkill(cmd); err != nil {
+		t.Fatalf("installSkill failed: %v", err)
+	}
+
+	output := outBuf.String()
+	if !strings.Contains(output, "Installed health skill successfully") {
+		t.Errorf("Expected success message, got: %s", output)
+	}
+
+	// Verify file WAS created
+	skillPath := filepath.Join(tmpHome, ".claude", "skills", "health", "SKILL.md")
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Error("Skill file should have been created with --yes flag")
+	}
+}
+
+// TestSkillInstallUsesCobraStreams verifies that output goes to Cobra's streams.
+func TestSkillInstallUsesCobraStreams(t *testing.T) {
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+	os.Setenv("HOME", tmpHome)
+
+	origSkipConfirm := skillSkipConfirm
+	skillSkipConfirm = true
+	t.Cleanup(func() { skillSkipConfirm = origSkipConfirm })
+
+	// Create command with custom output buffer
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetIn(strings.NewReader(""))
+
+	if err := installSkill(cmd); err != nil {
+		t.Fatalf("installSkill failed: %v", err)
+	}
+
+	// Verify output was captured in our buffer (not just printed to stdout)
+	output := outBuf.String()
+	if !strings.Contains(output, "Health Skill for Claude Code") {
+		t.Errorf("Expected header in Cobra output stream, got: %s", output)
+	}
+	if !strings.Contains(output, "Installed health skill successfully") {
+		t.Errorf("Expected success message in Cobra output stream, got: %s", output)
 	}
 }
 

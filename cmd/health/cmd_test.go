@@ -6,11 +6,13 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/harperreed/health/internal/models"
 	"github.com/harperreed/health/internal/storage"
+	"github.com/spf13/cobra"
 )
 
 func TestParseTime(t *testing.T) {
@@ -1560,7 +1562,13 @@ func TestInstallSkillFunction(t *testing.T) {
 	skillSkipConfirm = true
 	defer func() { skillSkipConfirm = false }()
 
-	err := installSkill()
+	// Create a mock command with captured output
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetIn(strings.NewReader(""))
+
+	err := installSkill(cmd)
 	if err != nil {
 		t.Errorf("installSkill failed: %v", err)
 	}
@@ -1589,7 +1597,13 @@ func TestInstallSkillOverwrite(t *testing.T) {
 	skillSkipConfirm = true
 	defer func() { skillSkipConfirm = false }()
 
-	err := installSkill()
+	// Create a mock command with captured output
+	cmd := &cobra.Command{}
+	var outBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetIn(strings.NewReader(""))
+
+	err := installSkill(cmd)
 	if err != nil {
 		t.Errorf("installSkill overwrite failed: %v", err)
 	}
