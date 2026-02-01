@@ -33,12 +33,12 @@ CAUTION:
 		idOrPrefix := args[0]
 
 		// First, try to get the metric to show what we're deleting
-		metric, err := charmClient.GetMetric(idOrPrefix)
+		metric, err := db.GetMetric(idOrPrefix)
 		if err != nil {
 			return fmt.Errorf("metric not found: %s", idOrPrefix)
 		}
 
-		if err := charmClient.DeleteMetric(idOrPrefix); err != nil {
+		if err := db.DeleteMetric(idOrPrefix); err != nil {
 			return fmt.Errorf("failed to delete metric: %w", err)
 		}
 

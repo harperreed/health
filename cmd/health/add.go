@@ -106,7 +106,7 @@ TIMESTAMPS:
 			m.WithNotes(addNotes)
 		}
 
-		if err := charmClient.CreateMetric(m); err != nil {
+		if err := db.CreateMetric(m); err != nil {
 			return fmt.Errorf("failed to create metric: %w", err)
 		}
 
@@ -149,11 +149,11 @@ func addBloodPressure(sysStr, diaStr string) error {
 		mDia.WithNotes(addNotes)
 	}
 
-	// Create both metrics (Charm KV handles atomicity)
-	if err := charmClient.CreateMetric(mSys); err != nil {
+	// Create both metrics
+	if err := db.CreateMetric(mSys); err != nil {
 		return fmt.Errorf("failed to create bp_sys: %w", err)
 	}
-	if err := charmClient.CreateMetric(mDia); err != nil {
+	if err := db.CreateMetric(mDia); err != nil {
 		return fmt.Errorf("failed to create bp_dia: %w", err)
 	}
 

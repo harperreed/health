@@ -1,16 +1,16 @@
 // ABOUTME: Root Cobra command for health CLI.
-// ABOUTME: Handles Charm client lifecycle via PersistentPre/PostRunE.
+// ABOUTME: Handles SQLite database lifecycle via PersistentPre/PostRunE.
 package main
 
 import (
 	"fmt"
 
-	"github.com/harperreed/health/internal/charm"
+	"github.com/harperreed/health/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 var (
-	charmClient *charm.Client
+	db *storage.DB
 )
 
 var rootCmd = &cobra.Command{
@@ -39,14 +39,12 @@ WORKOUTS:
   $ health workout metric abc123 km 5.2     # Add distance to workout
   $ health workout show abc123              # View workout details
 
-SYNC (AUTOMATIC):
+DATA EXPORT:
 
-  Sync health data across devices using Charm Cloud.
-  Data is E2E encrypted with your SSH key.
-
-  $ health sync link      # Link device to your Charm account
-  $ health sync status    # Check sync status
-  $ health sync wipe      # Reset local data from cloud
+  $ health export json                  # Export to JSON
+  $ health export yaml                  # Export to YAML
+  $ health export markdown              # Export to Markdown
+  $ health import backup.json           # Import from JSON
 
 MCP INTEGRATION:
 
@@ -62,29 +60,28 @@ MCP INTEGRATION:
 
 DATA STORAGE:
 
-  Metrics are stored in Charm KV at ~/.local/share/charm/kv/health.
-  Sync is automatic on each write operation.`,
+  Metrics are stored locally in SQLite at ~/.local/share/health/health.db`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip charm init for commands that don't need it
+		// Skip db init for commands that don't need it
 		if cmd.Name() == "version" || cmd.Name() == "help" {
 			return nil
 		}
 
 		var err error
-		charmClient, err = charm.InitClient()
+		db, err = storage.OpenDefault()
 		if err != nil {
-			return fmt.Errorf("failed to initialize charm client: %w", err)
+			return fmt.Errorf("failed to open database: %w", err)
 		}
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-		if charmClient != nil {
-			return charmClient.Close()
+		if db != nil {
+			return db.Close()
 		}
 		return nil
 	},
 }
 
 func init() {
-	// No persistent flags needed - Charm handles data location automatically
+	// No persistent flags needed - database location follows XDG spec
 }

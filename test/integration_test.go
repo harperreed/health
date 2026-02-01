@@ -1,4 +1,4 @@
-// ABOUTME: Integration tests for health CLI with Charm KV backend.
+// ABOUTME: Integration tests for health CLI with SQLite backend.
 // ABOUTME: Tests full workflow from CLI commands.
 package test
 
@@ -11,12 +11,17 @@ import (
 )
 
 // TestFullWorkflow tests the complete health CLI workflow.
-// NOTE: This test requires a configured Charm account.
-// Skip if SKIP_CHARM_TESTS is set.
 func TestFullWorkflow(t *testing.T) {
-	if os.Getenv("SKIP_CHARM_TESTS") != "" {
-		t.Skip("Skipping Charm integration tests (SKIP_CHARM_TESTS set)")
+	// Create temp dir for test database
+	tmpDir, err := os.MkdirTemp("", "health-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
 	}
+	defer os.RemoveAll(tmpDir)
+
+	// Set XDG_DATA_HOME to temp dir so tests don't affect real data
+	os.Setenv("XDG_DATA_HOME", tmpDir)
+	defer os.Unsetenv("XDG_DATA_HOME")
 
 	// Build the binary
 	projectRoot, _ := filepath.Abs("..")
@@ -31,6 +36,7 @@ func TestFullWorkflow(t *testing.T) {
 
 	run := func(args ...string) (string, error) {
 		cmd := exec.Command(healthBinary, args...)
+		cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+tmpDir)
 		output, err := cmd.CombinedOutput()
 		return string(output), err
 	}
@@ -78,5 +84,32 @@ func TestFullWorkflow(t *testing.T) {
 	}
 	if !strings.Contains(output, "run") {
 		t.Errorf("Expected 'run' in workout list, got: %s", output)
+	}
+
+	// Test export json
+	output, err = run("export", "json")
+	if err != nil {
+		t.Fatalf("Failed to export json: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "\"version\": \"1.0\"") {
+		t.Errorf("Expected version in JSON export, got: %s", output)
+	}
+
+	// Test export yaml
+	output, err = run("export", "yaml")
+	if err != nil {
+		t.Fatalf("Failed to export yaml: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "version:") {
+		t.Errorf("Expected version in YAML export, got: %s", output)
+	}
+
+	// Test export markdown
+	output, err = run("export", "markdown")
+	if err != nil {
+		t.Fatalf("Failed to export markdown: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "# Health Export") {
+		t.Errorf("Expected markdown header, got: %s", output)
 	}
 }
