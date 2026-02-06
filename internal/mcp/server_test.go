@@ -48,8 +48,8 @@ func TestNewServer(t *testing.T) {
 	if server.mcpServer == nil {
 		t.Error("Expected non-nil mcpServer")
 	}
-	if server.db == nil {
-		t.Error("Expected non-nil db")
+	if server.repo == nil {
+		t.Error("Expected non-nil repo")
 	}
 }
 

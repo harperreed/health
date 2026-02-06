@@ -448,9 +448,9 @@ func setupTestCLI(t *testing.T) (*storage.DB, func()) {
 	}
 
 	cleanup := func() {
-		if db != nil {
-			db.Close()
-			db = nil
+		if repo != nil {
+			repo.Close()
+			repo = nil
 		}
 		testDB.Close()
 		os.RemoveAll(tmpDir)
@@ -1091,33 +1091,46 @@ func TestExportToFile(t *testing.T) {
 	}
 }
 
-func TestMigrateCmdDryRun(t *testing.T) {
-	_, cleanup := setupTestCLI(t)
+func TestMigrateCmdToMarkdown(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
 	defer cleanup()
 
 	// Reset global flags
-	migrateDryRun = false
+	migrateTo = ""
+	migrateDataDir = ""
+	migrateForce = false
 
-	rootCmd.SetArgs([]string{"migrate", "--dry-run"})
+	// Create some test data to migrate
+	m := models.NewMetric(models.MetricWeight, 82.5)
+	testDB.CreateMetric(m)
+
+	targetDir := filepath.Join(t.TempDir(), "md-export")
+
+	rootCmd.SetArgs([]string{"migrate", "--to", "markdown", "--data-dir", targetDir})
 	err := rootCmd.Execute()
 
 	if err != nil {
-		t.Errorf("migrate --dry-run command failed: %v", err)
+		t.Errorf("migrate --to markdown command failed: %v", err)
 	}
 }
 
-func TestMigrateCmdRegular(t *testing.T) {
+func TestMigrateCmdMissingToFlag(t *testing.T) {
 	_, cleanup := setupTestCLI(t)
 	defer cleanup()
 
 	// Reset global flags
-	migrateDryRun = false
+	migrateTo = ""
+	migrateDataDir = ""
+	migrateForce = false
+
+	rootCmd.SetOut(&bytes.Buffer{})
+	rootCmd.SetErr(&bytes.Buffer{})
 
 	rootCmd.SetArgs([]string{"migrate"})
 	err := rootCmd.Execute()
 
-	if err != nil {
-		t.Errorf("migrate command failed: %v", err)
+	if err == nil {
+		t.Error("Expected error for migrate without --to flag")
 	}
 }
 
@@ -1149,10 +1162,20 @@ func TestMigrateCmdExists(t *testing.T) {
 	}
 }
 
-func TestMigrateCmdDryRunFlag(t *testing.T) {
-	flag := migrateCmd.Flags().Lookup("dry-run")
-	if flag == nil {
-		t.Error("Expected --dry-run flag on migrate command")
+func TestMigrateCmdFlags(t *testing.T) {
+	toFlag := migrateCmd.Flags().Lookup("to")
+	if toFlag == nil {
+		t.Error("Expected --to flag on migrate command")
+	}
+
+	dataDirFlag := migrateCmd.Flags().Lookup("data-dir")
+	if dataDirFlag == nil {
+		t.Error("Expected --data-dir flag on migrate command")
+	}
+
+	forceFlag := migrateCmd.Flags().Lookup("force")
+	if forceFlag == nil {
+		t.Error("Expected --force flag on migrate command")
 	}
 }
 

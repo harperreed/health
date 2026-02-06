@@ -58,14 +58,19 @@ func OpenDefault() (*DB, error) {
 	return Open(DefaultDBPath())
 }
 
-// DefaultDBPath returns the default database path following XDG spec.
-func DefaultDBPath() string {
+// DataDir returns the default data directory following XDG spec.
+func DataDir() string {
 	dataHome := os.Getenv("XDG_DATA_HOME")
 	if dataHome == "" {
 		home, _ := os.UserHomeDir()
 		dataHome = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(dataHome, "health", "health.db")
+	return filepath.Join(dataHome, "health")
+}
+
+// DefaultDBPath returns the default database path following XDG spec.
+func DefaultDBPath() string {
+	return filepath.Join(DataDir(), "health.db")
 }
 
 // Close closes the database connection.

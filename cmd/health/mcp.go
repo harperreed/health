@@ -54,7 +54,7 @@ AVAILABLE RESOURCES:
   health://metrics/today      Today's metrics
   health://workouts/recent    Recent workouts`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		server, err := mcp.NewServer(db)
+		server, err := mcp.NewServer(repo)
 		if err != nil {
 			return err
 		}

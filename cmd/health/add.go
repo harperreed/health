@@ -106,7 +106,7 @@ TIMESTAMPS:
 			m.WithNotes(addNotes)
 		}
 
-		if err := db.CreateMetric(m); err != nil {
+		if err := repo.CreateMetric(m); err != nil {
 			return fmt.Errorf("failed to create metric: %w", err)
 		}
 
@@ -150,10 +150,10 @@ func addBloodPressure(sysStr, diaStr string) error {
 	}
 
 	// Create both metrics
-	if err := db.CreateMetric(mSys); err != nil {
+	if err := repo.CreateMetric(mSys); err != nil {
 		return fmt.Errorf("failed to create bp_sys: %w", err)
 	}
-	if err := db.CreateMetric(mDia); err != nil {
+	if err := repo.CreateMetric(mDia); err != nil {
 		return fmt.Errorf("failed to create bp_dia: %w", err)
 	}
 

@@ -64,7 +64,7 @@ Examples:
 			w.WithNotes(workoutNotes)
 		}
 
-		if err := db.CreateWorkout(w); err != nil {
+		if err := repo.CreateWorkout(w); err != nil {
 			return fmt.Errorf("failed to create workout: %w", err)
 		}
 
@@ -88,7 +88,7 @@ var workoutListCmd = &cobra.Command{
 			wType = &workoutType
 		}
 
-		workouts, err := db.ListWorkouts(wType, workoutLimit)
+		workouts, err := repo.ListWorkouts(wType, workoutLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list workouts: %w", err)
 		}
@@ -120,7 +120,7 @@ var workoutShowCmd = &cobra.Command{
 	Short: "Show workout details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		w, err := db.GetWorkoutWithMetrics(args[0])
+		w, err := repo.GetWorkoutWithMetrics(args[0])
 		if err != nil {
 			return fmt.Errorf("failed to get workout: %w", err)
 		}
@@ -174,13 +174,13 @@ Examples:
 		}
 
 		// Verify workout exists
-		w, err := db.GetWorkout(workoutID)
+		w, err := repo.GetWorkout(workoutID)
 		if err != nil {
 			return fmt.Errorf("workout not found: %s", workoutID)
 		}
 
 		wm := models.NewWorkoutMetric(w.ID, metricName, value, unit)
-		if err := db.AddWorkoutMetric(wm); err != nil {
+		if err := repo.AddWorkoutMetric(wm); err != nil {
 			return fmt.Errorf("failed to add workout metric: %w", err)
 		}
 
@@ -203,12 +203,12 @@ CAUTION: This permanently deletes the workout and all associated metrics.`,
 		idOrPrefix := args[0]
 
 		// Get workout to show what we're deleting
-		w, err := db.GetWorkout(idOrPrefix)
+		w, err := repo.GetWorkout(idOrPrefix)
 		if err != nil {
 			return fmt.Errorf("workout not found: %s", idOrPrefix)
 		}
 
-		if err := db.DeleteWorkout(idOrPrefix); err != nil {
+		if err := repo.DeleteWorkout(idOrPrefix); err != nil {
 			return fmt.Errorf("failed to delete workout: %w", err)
 		}
 

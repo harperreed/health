@@ -1,16 +1,17 @@
 // ABOUTME: Root Cobra command for health CLI.
-// ABOUTME: Handles SQLite database lifecycle via PersistentPre/PostRunE.
+// ABOUTME: Handles storage lifecycle via PersistentPre/PostRunE using config-driven backend.
 package main
 
 import (
 	"fmt"
 
+	"github.com/harperreed/health/internal/config"
 	"github.com/harperreed/health/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 var (
-	db *storage.DB
+	repo storage.Repository
 )
 
 var rootCmd = &cobra.Command{
@@ -60,23 +61,29 @@ MCP INTEGRATION:
 
 DATA STORAGE:
 
-  Metrics are stored locally in SQLite at ~/.local/share/health/health.db`,
+  Metrics are stored locally. Default backend is SQLite at ~/.local/share/health/health.db.
+  Use 'health migrate --to markdown' to switch to markdown file storage.
+  Configuration is at ~/.config/health/config.json.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip db init for commands that don't need it
+		// Skip init for commands that don't need it
 		if cmd.Name() == "version" || cmd.Name() == "help" {
 			return nil
 		}
 
-		var err error
-		db, err = storage.OpenDefault()
+		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to open database: %w", err)
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		repo, err = cfg.OpenStorage()
+		if err != nil {
+			return fmt.Errorf("failed to open storage: %w", err)
 		}
 		return nil
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
-		if db != nil {
-			return db.Close()
+		if repo != nil {
+			return repo.Close()
 		}
 		return nil
 	},

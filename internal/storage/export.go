@@ -24,19 +24,24 @@ type ExportData struct {
 
 // GetAllData retrieves all data for export.
 func (d *DB) GetAllData() (*ExportData, error) {
-	metrics, err := d.ListMetrics(nil, 0)
+	return GetAllDataFromRepo(d)
+}
+
+// GetAllDataFromRepo retrieves all data for export from any Repository.
+func GetAllDataFromRepo(r Repository) (*ExportData, error) {
+	metrics, err := r.ListMetrics(nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list metrics: %w", err)
 	}
 
-	workouts, err := d.ListWorkouts(nil, 0)
+	workouts, err := r.ListWorkouts(nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list workouts: %w", err)
 	}
 
 	// Populate workout metrics
 	for _, w := range workouts {
-		wMetrics, err := d.ListWorkoutMetrics(w.ID)
+		wMetrics, err := r.ListWorkoutMetrics(w.ID)
 		if err != nil {
 			return nil, fmt.Errorf("list workout metrics: %w", err)
 		}
@@ -56,21 +61,26 @@ func (d *DB) GetAllData() (*ExportData, error) {
 
 // ImportData imports data from an export file.
 func (d *DB) ImportData(data *ExportData) error {
+	return ImportDataToRepo(d, data)
+}
+
+// ImportDataToRepo imports data from an export file into any Repository.
+func ImportDataToRepo(r Repository, data *ExportData) error {
 	// Import metrics
 	for _, m := range data.Metrics {
-		if err := d.CreateMetric(m); err != nil {
+		if err := r.CreateMetric(m); err != nil {
 			return fmt.Errorf("import metric: %w", err)
 		}
 	}
 
 	// Import workouts and their metrics
 	for _, w := range data.Workouts {
-		if err := d.CreateWorkout(w); err != nil {
+		if err := r.CreateWorkout(w); err != nil {
 			return fmt.Errorf("import workout: %w", err)
 		}
 		for _, wm := range w.Metrics {
 			wm.WorkoutID = w.ID
-			if err := d.AddWorkoutMetric(&wm); err != nil {
+			if err := r.AddWorkoutMetric(&wm); err != nil {
 				return fmt.Errorf("import workout metric: %w", err)
 			}
 		}
@@ -81,7 +91,12 @@ func (d *DB) ImportData(data *ExportData) error {
 
 // ExportJSON exports all data as JSON.
 func (d *DB) ExportJSON() ([]byte, error) {
-	data, err := d.GetAllData()
+	return ExportJSONFromRepo(d)
+}
+
+// ExportJSONFromRepo exports all data as JSON from any Repository.
+func ExportJSONFromRepo(r Repository) ([]byte, error) {
+	data, err := GetAllDataFromRepo(r)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +105,12 @@ func (d *DB) ExportJSON() ([]byte, error) {
 
 // ExportYAML exports all data as YAML.
 func (d *DB) ExportYAML() ([]byte, error) {
-	data, err := d.GetAllData()
+	return ExportYAMLFromRepo(d)
+}
+
+// ExportYAMLFromRepo exports all data as YAML from any Repository.
+func ExportYAMLFromRepo(r Repository) ([]byte, error) {
+	data, err := GetAllDataFromRepo(r)
 	if err != nil {
 		return nil, err
 	}
@@ -178,13 +198,18 @@ type yamlWorkoutMetric struct {
 }
 
 // ExportMarkdown exports data as Markdown.
+func (d *DB) ExportMarkdown(metricType *models.MetricType, since *time.Time) (string, error) {
+	return ExportMarkdownFromRepo(d, metricType, since)
+}
+
+// ExportMarkdownFromRepo exports data as Markdown from any Repository.
 //
 //nolint:gocognit,nestif,gocyclo // This function has clear, linear logic despite complexity metrics.
-func (d *DB) ExportMarkdown(metricType *models.MetricType, since *time.Time) (string, error) {
+func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *time.Time) (string, error) {
 	var metrics []*models.Metric
 	var err error
 
-	metrics, err = d.ListMetrics(metricType, 0)
+	metrics, err = r.ListMetrics(metricType, 0)
 	if err != nil {
 		return "", err
 	}
@@ -252,7 +277,7 @@ func (d *DB) ExportMarkdown(metricType *models.MetricType, since *time.Time) (st
 		}
 
 		// Add workouts section
-		workouts, err := d.ListWorkouts(nil, 0)
+		workouts, err := r.ListWorkouts(nil, 0)
 		if err == nil && len(workouts) > 0 {
 			// Filter by since if provided
 			if since != nil {
@@ -291,9 +316,14 @@ func (d *DB) ExportMarkdown(metricType *models.MetricType, since *time.Time) (st
 
 // ImportJSON imports data from JSON bytes.
 func (d *DB) ImportJSON(data []byte) error {
+	return ImportJSONToRepo(d, data)
+}
+
+// ImportJSONToRepo imports data from JSON bytes into any Repository.
+func ImportJSONToRepo(r Repository, data []byte) error {
 	var exportData ExportData
 	if err := json.Unmarshal(data, &exportData); err != nil {
 		return fmt.Errorf("unmarshal JSON: %w", err)
 	}
-	return d.ImportData(&exportData)
+	return ImportDataToRepo(r, &exportData)
 }

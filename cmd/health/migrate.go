@@ -1,76 +1,141 @@
-// ABOUTME: CLI command for migrating from Charm KV to SQLite.
-// ABOUTME: One-time migration tool for users upgrading from older versions.
+// ABOUTME: CLI command for migrating health data between storage backends.
+// ABOUTME: Supports sqlite-to-markdown and markdown-to-sqlite with safety checks.
 package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-)
 
-var (
-	migrateDryRun bool
+	"github.com/harperreed/health/internal/config"
+	"github.com/harperreed/health/internal/storage"
 )
 
 var migrateCmd = &cobra.Command{
 	Use:   "migrate",
-	Short: "Migrate from Charm KV to SQLite",
-	Long: `Migrate health data from the legacy Charm KV storage to SQLite.
+	Short: "Migrate data between storage backends",
+	Long: `Migrate all health data from the currently configured backend to a different backend.
 
-This is a one-time migration tool for users upgrading from older versions
-of the health tool that used Charm KV for storage.
+Reads metrics, workouts, and workout metrics from the current backend
+and writes them to the target backend. Does NOT update the config file;
+verify the migration was successful then update config.json manually.
 
-IMPORTANT:
-
-  - This command requires the legacy Charm KV data to exist
-  - The SQLite database will be created at ~/.local/share/health/health.db
-  - Existing SQLite data will NOT be overwritten (duplicates cause errors)
-  - Run with --dry-run first to see what would be migrated
-
-USAGE:
-
-  health migrate --dry-run   # Preview what would be migrated
-  health migrate             # Perform the migration
-
-AFTER MIGRATION:
-
-  Once migration is complete, you can delete the old Charm data:
-    rm -rf ~/.local/share/charm/kv/health/
-
-  The new data is stored at:
-    ~/.local/share/health/health.db`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if migrateDryRun {
-			color.Yellow("Dry run mode - no changes will be made")
-			fmt.Println()
-		}
-
-		// The Charm KV storage has been removed, so this command now serves
-		// as a placeholder for documentation purposes. Users who need to
-		// migrate should contact support or use the export/import commands
-		// if they have a JSON backup from the old system.
-		color.Yellow("Note: Charm KV storage has been removed from this version.")
-		fmt.Println()
-		fmt.Println("If you have data in the old Charm KV format, you have two options:")
-		fmt.Println()
-		fmt.Println("1. If you previously exported data using 'health sync export':")
-		fmt.Println("   health import backup.json")
-		fmt.Println()
-		fmt.Println("2. The Charm KV data was stored at:")
-		fmt.Println("   ~/.local/share/charm/kv/health/")
-		fmt.Println()
-		fmt.Println("   This data was encrypted with your SSH key. If you need to")
-		fmt.Println("   recover it, please contact support.")
-		fmt.Println()
-		fmt.Println("Your new data is stored at:")
-		fmt.Println("   ~/.local/share/health/health.db")
-
-		return nil
-	},
+Examples:
+  health migrate --to markdown
+  health migrate --to sqlite --data-dir ~/health-sqlite
+  health migrate --to markdown --force`,
+	RunE: runMigrate,
 }
 
+var (
+	migrateTo      string
+	migrateDataDir string
+	migrateForce   bool
+)
+
 func init() {
-	migrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "preview migration without making changes")
 	rootCmd.AddCommand(migrateCmd)
+	migrateCmd.Flags().StringVar(&migrateTo, "to", "", "target backend (sqlite or markdown)")
+	migrateCmd.Flags().StringVar(&migrateDataDir, "data-dir", "", "target data directory (defaults to current config data_dir)")
+	migrateCmd.Flags().BoolVar(&migrateForce, "force", false, "allow writing into a non-empty target directory")
+	_ = migrateCmd.MarkFlagRequired("to")
+}
+
+func runMigrate(cmd *cobra.Command, args []string) error {
+	// Load config and determine source backend
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	sourceBackend := cfg.GetBackend()
+	targetBackend := migrateTo
+
+	// Validate target backend
+	if targetBackend != "sqlite" && targetBackend != "markdown" {
+		return fmt.Errorf("invalid target backend %q: must be \"sqlite\" or \"markdown\"", targetBackend)
+	}
+	if targetBackend == sourceBackend {
+		return fmt.Errorf("target backend %q is the same as the current backend", targetBackend)
+	}
+
+	// Determine target data directory
+	targetDataDir := cfg.GetDataDir()
+	if migrateDataDir != "" {
+		targetDataDir = config.ExpandPath(migrateDataDir)
+	}
+
+	// Check if target directory is non-empty
+	nonEmpty, err := storage.IsDirNonEmpty(targetDataDir)
+	if err != nil {
+		return fmt.Errorf("check target directory: %w", err)
+	}
+	if nonEmpty && !migrateForce {
+		return fmt.Errorf("target directory %q is not empty; use --force to overwrite", targetDataDir)
+	}
+
+	// Open source storage
+	src, err := cfg.OpenStorage()
+	if err != nil {
+		return fmt.Errorf("open source storage (%s): %w", sourceBackend, err)
+	}
+	defer func() {
+		if cerr := src.Close(); cerr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: closing source storage: %v\n", cerr)
+		}
+	}()
+
+	// Open target storage
+	dst, err := openTargetStorage(targetBackend, targetDataDir)
+	if err != nil {
+		return fmt.Errorf("open target storage (%s): %w", targetBackend, err)
+	}
+	defer func() {
+		if cerr := dst.Close(); cerr != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: closing target storage: %v\n", cerr)
+		}
+	}()
+
+	// Print plan
+	color.Yellow("Migrating health data:")
+	fmt.Printf("  Source:  %s (%s)\n", sourceBackend, cfg.GetDataDir())
+	fmt.Printf("  Target:  %s (%s)\n", targetBackend, targetDataDir)
+	fmt.Println()
+
+	// Run migration
+	summary, err := storage.MigrateData(src, dst)
+	if err != nil {
+		return fmt.Errorf("migration failed: %w", err)
+	}
+
+	// Print summary
+	color.Green("Migration complete!")
+	fmt.Printf("  Metrics:         %d\n", summary.Metrics)
+	fmt.Printf("  Workouts:        %d\n", summary.Workouts)
+	fmt.Printf("  Workout Metrics: %d\n", summary.WorkoutMetrics)
+	fmt.Println()
+	color.Yellow("Note: config.json was NOT updated. To switch to the new backend, edit:")
+	fmt.Printf("  %s\n", config.GetConfigPath())
+	fmt.Printf("  Set \"backend\": %q", targetBackend)
+	if migrateDataDir != "" {
+		fmt.Printf(" and \"data_dir\": %q", migrateDataDir)
+	}
+	fmt.Println()
+
+	return nil
+}
+
+// openTargetStorage creates a Repository implementation for the given backend and data directory.
+func openTargetStorage(backend, dataDir string) (storage.Repository, error) {
+	switch backend {
+	case "sqlite":
+		dbPath := filepath.Join(dataDir, "health.db")
+		return storage.Open(dbPath)
+	case "markdown":
+		return storage.NewMarkdownStore(dataDir)
+	default:
+		return nil, fmt.Errorf("unknown backend: %q", backend)
+	}
 }

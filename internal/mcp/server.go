@@ -1,5 +1,5 @@
 // ABOUTME: MCP server setup for health metrics store.
-// ABOUTME: Wraps MCP server with SQLite storage connection.
+// ABOUTME: Wraps MCP server with storage Repository connection.
 package mcp
 
 import (
@@ -12,11 +12,11 @@ import (
 // Server wraps the MCP server with storage access.
 type Server struct {
 	mcpServer *mcp.Server
-	db        *storage.DB
+	repo      storage.Repository
 }
 
 // NewServer creates a new MCP server with the given storage.
-func NewServer(db *storage.DB) (*Server, error) {
+func NewServer(repo storage.Repository) (*Server, error) {
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "health",
@@ -27,7 +27,7 @@ func NewServer(db *storage.DB) (*Server, error) {
 
 	s := &Server{
 		mcpServer: mcpServer,
-		db:        db,
+		repo:      repo,
 	}
 
 	s.registerTools()

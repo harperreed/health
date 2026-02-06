@@ -9,6 +9,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/models"
+	"github.com/harperreed/health/internal/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -52,9 +53,9 @@ EXAMPLES:
 
 		switch format {
 		case "json":
-			data, err = db.ExportJSON()
+			data, err = storage.ExportJSONFromRepo(repo)
 		case "yaml":
-			data, err = db.ExportYAML()
+			data, err = storage.ExportYAMLFromRepo(repo)
 		case "markdown":
 			var metricType *models.MetricType
 			if exportType != "" {
@@ -69,7 +70,7 @@ EXAMPLES:
 				}
 				since = &t
 			}
-			md, err := db.ExportMarkdown(metricType, since)
+			md, err := storage.ExportMarkdownFromRepo(repo, metricType, since)
 			if err != nil {
 				return err
 			}
@@ -86,7 +87,7 @@ EXAMPLES:
 			if err := os.WriteFile(exportOutput, data, 0600); err != nil {
 				return fmt.Errorf("failed to write file: %w", err)
 			}
-			color.Green("✓ Exported to %s", exportOutput)
+			color.Green("Exported to %s", exportOutput)
 		} else {
 			fmt.Println(string(data))
 		}
@@ -115,11 +116,11 @@ EXAMPLES:
 			return fmt.Errorf("failed to read file: %w", err)
 		}
 
-		if err := db.ImportJSON(data); err != nil {
+		if err := storage.ImportJSONToRepo(repo, data); err != nil {
 			return fmt.Errorf("import failed: %w", err)
 		}
 
-		color.Green("✓ Imported from %s", filename)
+		color.Green("Imported from %s", filename)
 		return nil
 	},
 }
