@@ -89,16 +89,10 @@ func TestGetDataDirExpandsTilde(t *testing.T) {
 }
 
 func TestLoadNonExistentConfig(t *testing.T) {
-	// Set XDG_CONFIG_HOME to a temp dir with no config file
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", originalXDG)
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	// Also override XDG_DATA_HOME so no existing health.db is found
+	t.Setenv("XDG_DATA_HOME", tmpDir)
 
 	cfg, err := Load()
 	if err != nil {
@@ -108,25 +102,74 @@ func TestLoadNonExistentConfig(t *testing.T) {
 		t.Fatal("Load() returned nil config")
 	}
 
-	// Should return defaults
-	if cfg.Backend != "" {
-		t.Errorf("Expected empty Backend, got %q", cfg.Backend)
+	// New users should get markdown backend
+	if cfg.Backend != "markdown" {
+		t.Errorf("Expected Backend %q for new user, got %q", "markdown", cfg.Backend)
 	}
-	if cfg.DataDir != "" {
-		t.Errorf("Expected empty DataDir, got %q", cfg.DataDir)
+
+	// Config file should be auto-created
+	configPath := GetConfigPath()
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		t.Error("Expected config file to be auto-created on first run")
+	}
+}
+
+func TestLoadExistingSQLiteUser(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	// Create a fake health.db to simulate existing SQLite user
+	dataDir := filepath.Join(tmpDir, "health")
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("Failed to create data dir: %v", err)
+	}
+	dbPath := filepath.Join(dataDir, "health.db")
+	if err := os.WriteFile(dbPath, []byte("fake-sqlite-db"), 0600); err != nil {
+		t.Fatalf("Failed to create fake health.db: %v", err)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() with existing health.db should not error: %v", err)
+	}
+
+	if cfg.Backend != "sqlite" {
+		t.Errorf("Expected Backend %q for existing SQLite user, got %q", "sqlite", cfg.Backend)
+	}
+}
+
+func TestAutoCreatedConfigContainsValidJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("XDG_DATA_HOME", tmpDir)
+
+	// Trigger auto-creation by loading with no config
+	_, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Read and validate the auto-created config file
+	configPath := GetConfigPath()
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read auto-created config: %v", err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Auto-created config is not valid JSON: %v", err)
+	}
+
+	if cfg.Backend != "markdown" {
+		t.Errorf("Auto-created config backend = %q, want %q", cfg.Backend, "markdown")
 	}
 }
 
 func TestSaveAndLoad(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", originalXDG)
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Save config
 	cfg := &Config{
@@ -152,16 +195,9 @@ func TestSaveAndLoad(t *testing.T) {
 }
 
 func TestSaveCreatesDirectory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
+	tmpDir := t.TempDir()
 	// Point to a non-existent subdirectory
-	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "nonexistent"))
-	defer os.Setenv("XDG_CONFIG_HOME", originalXDG)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmpDir, "nonexistent"))
 
 	cfg := &Config{Backend: "sqlite"}
 	if err := cfg.Save(); err != nil {
@@ -176,37 +212,23 @@ func TestSaveCreatesDirectory(t *testing.T) {
 }
 
 func TestLoadInvalidJSON(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", originalXDG)
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	// Write invalid JSON
 	configDir := filepath.Join(tmpDir, "health")
 	os.MkdirAll(configDir, 0755)
 	os.WriteFile(filepath.Join(configDir, "config.json"), []byte("invalid json"), 0600)
 
-	_, err = Load()
+	_, err := Load()
 	if err == nil {
 		t.Error("Expected error for invalid JSON config")
 	}
 }
 
 func TestGetConfigPath(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	originalXDG := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer os.Setenv("XDG_CONFIG_HOME", originalXDG)
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
 	got := GetConfigPath()
 	want := filepath.Join(tmpDir, "health", "config.json")
@@ -216,11 +238,7 @@ func TestGetConfigPath(t *testing.T) {
 }
 
 func TestOpenStorageSQLite(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	cfg := &Config{
 		Backend: "sqlite",
@@ -245,11 +263,7 @@ func TestOpenStorageSQLite(t *testing.T) {
 }
 
 func TestOpenStorageMarkdown(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	cfg := &Config{
 		Backend: "markdown",
@@ -318,11 +332,7 @@ func TestConfigJSONOmitsEmpty(t *testing.T) {
 }
 
 func TestOpenStorageDefaultBackend(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "health-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	// Empty config should use sqlite backend by default
 	cfg := &Config{
