@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/harper/suite/mdstore"
 	"github.com/harperreed/health/internal/models"
+	"github.com/harperreed/mdstore"
 	"gopkg.in/yaml.v3"
 )
 

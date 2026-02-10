@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/harper/suite/mdstore"
 	"github.com/harperreed/health/internal/storage"
+	"github.com/harperreed/mdstore"
 )
 
 // Config stores health tool configuration.
