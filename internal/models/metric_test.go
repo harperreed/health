@@ -260,6 +260,12 @@ func TestWithSource(t *testing.T) {
 	if m.Source != "whoop" {
 		t.Errorf("Source = %q, want whoop", m.Source)
 	}
+
+	// Verify WithSource normalizes: trims spaces and lowercases.
+	m2 := NewMetric(MetricHRV, 48).WithSource("  Whoop  ")
+	if m2.Source != "whoop" {
+		t.Errorf("Source = %q, want %q (normalization not applied)", m2.Source, "whoop")
+	}
 }
 
 func TestNormalizeSource(t *testing.T) {
