@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1240,14 +1241,55 @@ func TestHandleSummaryResourceNewTypes(t *testing.T) {
 		t.Fatalf("handleSummaryResource: %v", err)
 	}
 
-	text := result.Contents[0].Text
-
-	// spo2 should appear under biometrics, strain under activity.
-	if !contains(text, `"spo2"`) {
-		t.Error("Expected spo2 in summary output")
+	// Unmarshal into a generic map and walk the exact JSON path the handler emits:
+	// top-level "metrics" → "biometrics" → "spo2"
+	// top-level "metrics" → "activity"   → "strain"
+	var body map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &body); err != nil {
+		t.Fatalf("failed to unmarshal summary JSON: %v", err)
 	}
-	if !contains(text, `"strain"`) {
-		t.Error("Expected strain in summary output")
+
+	metricsRaw, ok := body["metrics"]
+	if !ok {
+		t.Fatal("summary JSON missing top-level \"metrics\" key")
+	}
+	metrics, ok := metricsRaw.(map[string]interface{})
+	if !ok {
+		t.Fatal("\"metrics\" is not a JSON object")
+	}
+
+	// Assert spo2 is under metrics.biometrics, not somewhere else.
+	biometricsRaw, ok := metrics["biometrics"]
+	if !ok {
+		t.Fatal("summary JSON missing \"metrics.biometrics\" key")
+	}
+	biometrics, ok := biometricsRaw.(map[string]interface{})
+	if !ok {
+		t.Fatal("\"metrics.biometrics\" is not a JSON object")
+	}
+	if _, ok := biometrics["spo2"]; !ok {
+		t.Error("expected spo2 under metrics.biometrics, but it was not present there")
+	}
+
+	// Assert strain is under metrics.activity, not somewhere else.
+	activityRaw, ok := metrics["activity"]
+	if !ok {
+		t.Fatal("summary JSON missing \"metrics.activity\" key")
+	}
+	activity, ok := activityRaw.(map[string]interface{})
+	if !ok {
+		t.Fatal("\"metrics.activity\" is not a JSON object")
+	}
+	if _, ok := activity["strain"]; !ok {
+		t.Error("expected strain under metrics.activity, but it was not present there")
+	}
+
+	// Confirm neither metric leaked into the wrong category.
+	if _, ok := biometrics["strain"]; ok {
+		t.Error("strain must not appear under metrics.biometrics")
+	}
+	if _, ok := activity["spo2"]; ok {
+		t.Error("spo2 must not appear under metrics.activity")
 	}
 }
 
