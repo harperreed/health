@@ -1,5 +1,5 @@
 // ABOUTME: CLI command for listing health metrics.
-// ABOUTME: Supports filtering by type and limiting results.
+// ABOUTME: Supports filtering by type, source, and limiting results.
 package main
 
 import (
@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	listType  string
-	listLimit int
+	listType   string
+	listLimit  int
+	listSource string
 )
 
 var listCmd = &cobra.Command{
@@ -24,7 +25,7 @@ var listCmd = &cobra.Command{
 
 OUTPUT FORMAT:
 
-  Each line shows: ID  TIMESTAMP  TYPE  VALUE  UNIT  (NOTES)
+  Each line shows: ID  TIMESTAMP  TYPE  SOURCE  VALUE  UNIT  (NOTES)
 
   The ID is an 8-character prefix you can use with delete commands.
 
@@ -35,6 +36,9 @@ FILTERING:
     steps, sleep_hours, active_calories, water, calories, protein,
     carbs, fat, mood, energy, stress, anxiety, focus, meditation
 
+  Use --source to filter by data source:
+    whoop, withings, emfit, manual, or any free-form source.
+
   Note: Blood pressure is stored as bp_sys and bp_dia separately.
 
 EXAMPLES:
@@ -42,7 +46,9 @@ EXAMPLES:
   health list                    # Show last 20 metrics (all types)
   health list --type weight      # Show only weight entries
   health list --type mood -n 50  # Show last 50 mood entries
-  health list -t hrv             # Show HRV measurements`,
+  health list -t hrv             # Show HRV measurements
+  health list --source whoop     # Show only Whoop-sourced entries
+  health list -s whoop           # Same, short flag`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var metricType *models.MetricType
 		if listType != "" {
@@ -53,7 +59,13 @@ EXAMPLES:
 			metricType = &mt
 		}
 
-		metrics, err := repo.ListMetrics(metricType, nil, listLimit)
+		var sourceFilter *string
+		if listSource != "" {
+			s := models.NormalizeSource(listSource)
+			sourceFilter = &s
+		}
+
+		metrics, err := repo.ListMetrics(metricType, sourceFilter, listLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list metrics: %w", err)
 		}
@@ -69,10 +81,11 @@ EXAMPLES:
 			if m.Notes != nil && *m.Notes != "" {
 				notes = faint.Sprintf(" (%s)", truncate(*m.Notes, 30))
 			}
-			fmt.Printf("%s %s %s %.2f %s%s\n",
+			fmt.Printf("%s %s %s %s %.2f %s%s\n",
 				faint.Sprint(m.ID.String()[:8]),
 				faint.Sprint(m.RecordedAt.Format("2006-01-02 15:04")),
 				padRight(string(m.MetricType), 16),
+				faint.Sprint(padRight(m.Source, 9)),
 				m.Value,
 				m.Unit,
 				notes)
@@ -99,5 +112,6 @@ func padRight(s string, length int) string {
 func init() {
 	listCmd.Flags().StringVarP(&listType, "type", "t", "", "filter by metric type")
 	listCmd.Flags().IntVarP(&listLimit, "limit", "n", 20, "max number of results")
+	listCmd.Flags().StringVarP(&listSource, "source", "s", "", "filter by data source (whoop, withings, emfit, manual, ...)")
 	rootCmd.AddCommand(listCmd)
 }

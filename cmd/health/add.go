@@ -13,8 +13,10 @@ import (
 )
 
 var (
-	addAt    string
-	addNotes string
+	addAt     string
+	addNotes  string
+	addSource string
+	addDedupe bool
 )
 
 var addCmd = &cobra.Command{
@@ -53,6 +55,12 @@ METRIC TYPES:
     focus          Focus/concentration rating
     meditation     Meditation duration in minutes
 
+SOURCES:
+
+  Use --source to tag where the data came from.
+  Known sources: whoop, withings, emfit, manual.
+  Free-form values are accepted. Default is manual.
+
 EXAMPLES:
 
   health add weight 82.5                    # Log weight
@@ -61,6 +69,7 @@ EXAMPLES:
   health add mood 7 --notes "Great day!"    # Mood with notes
   health add steps 10432                    # Daily steps
   health add sleep_hours 7.5                # Sleep duration
+  health add hrv 48 --source whoop --dedupe   # Idempotent sync write
 
 TIMESTAMPS:
 
@@ -82,7 +91,7 @@ TIMESTAMPS:
 
 		// Validate metric type
 		if !models.IsValidMetricType(metricType) {
-			return fmt.Errorf("unknown metric type: %s\nValid types: weight, body_fat, bp_sys, bp_dia, heart_rate, hrv, temperature, steps, sleep_hours, active_calories, water, calories, protein, carbs, fat, mood, energy, stress, anxiety, focus, meditation", metricType)
+			return fmt.Errorf("unknown metric type: %s\nValid types: %s", metricType, models.ValidMetricTypesList())
 		}
 
 		value, err := strconv.ParseFloat(args[1], 64)
@@ -106,14 +115,28 @@ TIMESTAMPS:
 			m.WithNotes(addNotes)
 		}
 
-		if err := repo.CreateMetric(m); err != nil {
+		// Handle --source flag
+		if addSource != "" {
+			m.WithSource(addSource)
+		}
+
+		verb := "Added"
+		if addDedupe {
+			updated, err := repo.UpsertMetric(m)
+			if err != nil {
+				return fmt.Errorf("failed to upsert metric: %w", err)
+			}
+			if updated {
+				verb = "Updated"
+			}
+		} else if err := repo.CreateMetric(m); err != nil {
 			return fmt.Errorf("failed to create metric: %w", err)
 		}
 
-		color.Green("✓ Added %s", metricType)
-		fmt.Printf("  %s %.2f %s\n",
+		color.Green("✓ %s %s", verb, metricType)
+		fmt.Printf("  %s %.2f %s [%s]\n",
 			color.New(color.Faint).Sprint(m.ID.String()[:8]),
-			m.Value, m.Unit)
+			m.Value, m.Unit, m.Source)
 
 		return nil
 	},
@@ -149,15 +172,35 @@ func addBloodPressure(sysStr, diaStr string) error {
 		mDia.WithNotes(addNotes)
 	}
 
-	// Create both metrics
-	if err := repo.CreateMetric(mSys); err != nil {
-		return fmt.Errorf("failed to create bp_sys: %w", err)
-	}
-	if err := repo.CreateMetric(mDia); err != nil {
-		return fmt.Errorf("failed to create bp_dia: %w", err)
+	if addSource != "" {
+		mSys.WithSource(addSource)
+		mDia.WithSource(addSource)
 	}
 
-	color.Green("✓ Added blood pressure")
+	var sysUpdated, diaUpdated bool
+	if addDedupe {
+		sysUpdated, err = repo.UpsertMetric(mSys)
+		if err != nil {
+			return fmt.Errorf("failed to upsert bp_sys: %w", err)
+		}
+		diaUpdated, err = repo.UpsertMetric(mDia)
+		if err != nil {
+			return fmt.Errorf("failed to upsert bp_dia: %w", err)
+		}
+	} else {
+		if err := repo.CreateMetric(mSys); err != nil {
+			return fmt.Errorf("failed to create bp_sys: %w", err)
+		}
+		if err := repo.CreateMetric(mDia); err != nil {
+			return fmt.Errorf("failed to create bp_dia: %w", err)
+		}
+	}
+
+	verb := "Added"
+	if sysUpdated || diaUpdated {
+		verb = "Updated"
+	}
+	color.Green("✓ %s blood pressure", verb)
 	fmt.Printf("  %s %.0f/%.0f mmHg\n",
 		color.New(color.Faint).Sprint(mSys.ID.String()[:8]),
 		sys, dia)
@@ -183,5 +226,7 @@ func parseTime(s string) (time.Time, error) {
 func init() {
 	addCmd.Flags().StringVar(&addAt, "at", "", "timestamp (YYYY-MM-DD HH:MM)")
 	addCmd.Flags().StringVar(&addNotes, "notes", "", "notes for the metric")
+	addCmd.Flags().StringVar(&addSource, "source", "", "data source: whoop, withings, emfit, manual, or free-form (default manual)")
+	addCmd.Flags().BoolVar(&addDedupe, "dedupe", false, "replace an existing entry with the same source, type, and timestamp instead of adding a duplicate")
 	rootCmd.AddCommand(addCmd)
 }
