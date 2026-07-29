@@ -56,33 +56,6 @@ func emfitServer(t *testing.T, deviceID string, responseBody string) *httptest.S
 	return srv
 }
 
-// loginServer builds a test server that handles login + data calls.
-// loginBody is the JSON response to POST /api/v1/login.
-func loginServer(t *testing.T, deviceID, loginBody, presenceBody string) (*httptest.Server, *int32) {
-	t.Helper()
-	var loginCalls int32
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/login", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		atomic.AddInt32(&loginCalls, 1)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, loginBody)
-	})
-	mux.HandleFunc("/api/v1/user/get", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"user":{"id":1}}`)
-	})
-	mux.HandleFunc(fmt.Sprintf("/api/v1/presence/%s/latest", deviceID), func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, presenceBody)
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv, &loginCalls
-}
-
 // --- tests ---
 
 // TestEmfitSyncMetricsObjectDatestamps verifies the four metrics with correct
@@ -236,16 +209,41 @@ func TestEmfitSyncConfigTokenPath(t *testing.T) {
 }
 
 // TestEmfitSyncLoginPathTokenField verifies the login path: POST /api/v1/login
-// with username/password, receive {token: "..."}, use as Bearer on data calls.
+// with username/password, receive both {token: "..."} and {remember_token: "..."},
+// and that the "token" field (not "remember_token") is used as Bearer on data calls.
 func TestEmfitSyncLoginPathTokenField(t *testing.T) {
 	const deviceID = "dev-004"
 	const username = "user@example.com"
 	const password = "s3cr3t"
 	const wantTS = int64(1753617600)
 
+	var loginCalls int32
+	var gotAuth string
+
 	body := emfitLatestResponse(objectDatestamps(wantTS))
-	loginResp := `{"token": "login-token-123", "remember_token": "rem-tok"}`
-	srv, loginCalls := loginServer(t, deviceID, loginResp, body)
+	// Both fields present with DIFFERENT values — token must win over remember_token.
+	loginResp := `{"token": "primary-tok", "remember_token": "fallback-tok"}`
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		atomic.AddInt32(&loginCalls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, loginResp)
+	})
+	mux.HandleFunc("/api/v1/user/get", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"user":{"id":1}}`)
+	})
+	mux.HandleFunc(fmt.Sprintf("/api/v1/presence/%s/latest", deviceID), func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, body)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
 
 	repo := setupTestRepo(t)
 	// No pre-configured token → must login.
@@ -257,8 +255,13 @@ func TestEmfitSyncLoginPathTokenField(t *testing.T) {
 		t.Fatalf("Sync: %v", err)
 	}
 
-	if atomic.LoadInt32(loginCalls) != 1 {
-		t.Errorf("login calls = %d, want 1", atomic.LoadInt32(loginCalls))
+	if atomic.LoadInt32(&loginCalls) != 1 {
+		t.Errorf("login calls = %d, want 1", atomic.LoadInt32(&loginCalls))
+	}
+
+	// "token" must be preferred over "remember_token" when both are present.
+	if gotAuth != "Bearer primary-tok" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer primary-tok")
 	}
 
 	all, err := repo.ListMetrics(nil, nil, 0)
