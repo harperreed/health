@@ -5,6 +5,7 @@ package provsync
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -43,7 +44,7 @@ func TestWithingsValueMath(t *testing.T) {
 	}
 	for _, tc := range cases {
 		got := withingsRealValue(tc.value, tc.unit)
-		if got != tc.wantReal {
+		if math.Abs(got-tc.wantReal) > 1e-9 {
 			t.Errorf("withingsRealValue(%d, %d) = %v, want %v", tc.value, tc.unit, got, tc.wantReal)
 		}
 	}
@@ -510,9 +511,11 @@ func TestWithingsDataNonzeroStatusIsError(t *testing.T) {
 	}
 }
 
-// TestWithingsExpiredTokenExactlyOneRefresh verifies that an expired token triggers
-// exactly one refresh — two concurrent goroutines must not double-refresh.
-func TestWithingsExpiredTokenExactlyOneRefresh(t *testing.T) {
+// TestWithingsRefreshOnce verifies the serial path: an expired token triggers
+// exactly one refresh call and the rotated token is persisted to the store.
+// Concurrency proof (two goroutines must not double-refresh) lives in
+// tokens_test.go TestConcurrentRefreshExactlyOnce, which owns the flock logic.
+func TestWithingsRefreshOnce(t *testing.T) {
 	var refreshCount int32
 
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

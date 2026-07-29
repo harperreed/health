@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/harperreed/health/internal/models"
@@ -245,13 +246,11 @@ func (c *WithingsClient) postForm(tok Token, path string, params url.Values, dst
 	req.Header.Set("Authorization", tok.TokenType+" "+tok.AccessToken)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	// Attach params as body.
-	bodyReader, bodyWriter := io.Pipe()
-	go func() {
-		_, werr := fmt.Fprint(bodyWriter, params.Encode())
-		bodyWriter.CloseWithError(werr)
-	}()
-	req.Body = bodyReader
+	// Use strings.NewReader so the body length is known; this sets Content-Length
+	// automatically and avoids chunked transfer encoding (which some gateways reject).
+	encoded := params.Encode()
+	req.Body = io.NopCloser(strings.NewReader(encoded))
+	req.ContentLength = int64(len(encoded))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
