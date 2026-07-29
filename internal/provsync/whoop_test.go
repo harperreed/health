@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -274,7 +275,7 @@ func TestWhoopSyncRecoveryMetrics(t *testing.T) {
 
 	repo := setupTestRepo(t)
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -375,7 +376,7 @@ func TestWhoopSyncSleepMetrics(t *testing.T) {
 
 	repo := setupTestRepo(t)
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 27, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -449,7 +450,7 @@ func TestWhoopSyncCycleMetrics(t *testing.T) {
 
 	repo := setupTestRepo(t)
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -496,7 +497,7 @@ func TestWhoopSyncUnscored(t *testing.T) {
 
 	repo := setupTestRepo(t)
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -559,7 +560,7 @@ func TestWhoopSyncPagination(t *testing.T) {
 
 	repo := setupTestRepo(t)
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 27, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -618,7 +619,7 @@ func TestWhoopSyncExpiredToken(t *testing.T) {
 
 	store := setupTestTokenStore(t, expiredToken())
 	repo := setupTestRepo(t)
-	client := NewWhoopClient(apiSrv.URL, tokenSrv.URL, store)
+	client := NewWhoopClient(apiSrv.URL, tokenSrv.URL, "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -691,7 +692,7 @@ func TestWhoopSyncIdempotency(t *testing.T) {
 
 	repo := setupTestRepo(t)
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused-token-endpoint", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -745,7 +746,7 @@ func TestWhoopSyncTokenSentInHeader(t *testing.T) {
 
 	store := setupTestTokenStore(t, freshToken())
 	repo := setupTestRepo(t)
-	client := NewWhoopClient(apiSrv.URL, "http://unused", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -766,7 +767,7 @@ func TestWhoopSyncHTTPError(t *testing.T) {
 
 	store := setupTestTokenStore(t, freshToken())
 	repo := setupTestRepo(t)
-	client := NewWhoopClient(apiSrv.URL, "http://unused", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -806,7 +807,7 @@ func TestWhoopRefreshTokenRotation(t *testing.T) {
 
 	store := setupTestTokenStore(t, expiredToken())
 	repo := setupTestRepo(t)
-	client := NewWhoopClient(apiSrv.URL, tokenSrv.URL, store)
+	client := NewWhoopClient(apiSrv.URL, tokenSrv.URL, "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -846,7 +847,7 @@ func TestWhoopSyncSetsSourceWhoop(t *testing.T) {
 
 	store := setupTestTokenStore(t, freshToken())
 	repo := setupTestRepo(t)
-	client := NewWhoopClient(apiSrv.URL, "http://unused", store)
+	client := NewWhoopClient(apiSrv.URL, "http://unused", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -876,7 +877,7 @@ func TestWhoopSyncLargeMultiPageSet(t *testing.T) {
 	srv := whoopServer(t)
 	store := setupTestTokenStore(t, freshToken())
 	repo := setupTestRepo(t)
-	client := NewWhoopClient(srv.URL, "http://unused", store)
+	client := NewWhoopClient(srv.URL, "http://unused", "cid", "csec", store)
 
 	start := time.Date(2026, 7, 26, 0, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
@@ -901,6 +902,113 @@ func TestWhoopSyncLargeMultiPageSet(t *testing.T) {
 // TestWhoopClientClose verifies no panic on Close (resource cleanup hook).
 func TestWhoopClientClose(t *testing.T) {
 	store := setupTestTokenStore(t, freshToken())
-	client := NewWhoopClient("http://unused", "http://unused", store)
+	client := NewWhoopClient("http://unused", "http://unused", "cid", "csec", store)
 	client.Close()
+}
+
+// TestWhoopProductionURLPathComposition guards against the doubled-prefix bug:
+// WhoopAPIBaseURL + "/developer/v2/recovery" must not produce a URL containing
+// "/developer/developer/". The httptest server records every request path; we
+// verify that the recovery endpoint is reached at exactly /developer/v2/recovery.
+func TestWhoopProductionURLPathComposition(t *testing.T) {
+	// Collect all paths the server receives.
+	var receivedPaths []string
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPaths = append(receivedPaths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"records":[],"next_token":""}`)
+	}))
+	t.Cleanup(apiSrv.Close)
+
+	// Graft the path suffix of WhoopAPIBaseURL onto the test server so the test
+	// exercises exactly the composition that production code performs. With the
+	// correct constant ("https://api.prod.whoop.com", no path suffix) basePath is
+	// empty and paths like "/developer/v2/recovery" are sent as-is. With the old
+	// wrong constant ("https://api.prod.whoop.com/developer") basePath would be
+	// "/developer", composing "/developer/developer/v2/recovery".
+	u, err := url.Parse(WhoopAPIBaseURL)
+	if err != nil {
+		t.Fatalf("WhoopAPIBaseURL parse: %v", err)
+	}
+	testBase := apiSrv.URL + u.Path
+
+	store := setupTestTokenStore(t, freshToken())
+	client := NewWhoopClient(testBase, "http://unused-token-endpoint", "cid", "csec", store)
+
+	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
+	_ = client.Sync(setupTestRepo(t), start, end)
+
+	// Find the path the recovery fetch used.
+	recoveryPath := ""
+	for _, p := range receivedPaths {
+		if p == "/developer/v2/recovery" || p == "/developer/developer/v2/recovery" {
+			recoveryPath = p
+			break
+		}
+	}
+	if recoveryPath == "" {
+		t.Fatalf("recovery endpoint not called; all paths: %v", receivedPaths)
+	}
+	if recoveryPath != "/developer/v2/recovery" {
+		t.Errorf("recovery request path = %q, want /developer/v2/recovery (WhoopAPIBaseURL path suffix %q caused doubled prefix)",
+			recoveryPath, u.Path)
+	}
+}
+
+// TestWhoopRefreshSendsClientCredentials verifies that the OAuth2 token refresh
+// POST includes client_id and client_secret. The token endpoint returns 401 if
+// either credential is missing, which causes EnsureFresh to fail and Sync to
+// return a non-nil error — failing the test.
+func TestWhoopRefreshSendsClientCredentials(t *testing.T) {
+	const wantClientID = "test-client-id"
+	const wantClientSecret = "test-client-secret"
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("token endpoint: parse form: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if r.FormValue("client_id") != wantClientID || r.FormValue("client_secret") != wantClientSecret {
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprintf(w, `{"error":"invalid_client","client_id":%q,"client_secret":%q}`,
+				r.FormValue("client_id"), r.FormValue("client_secret"))
+			return
+		}
+		resp := map[string]interface{}{
+			"access_token":  "acc-cred-ok",
+			"refresh_token": "ref-cred-ok",
+			"expires_in":    7200,
+			"token_type":    "Bearer",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	}))
+	t.Cleanup(tokenSrv.Close)
+
+	apiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"records":[],"next_token":""}`)
+	}))
+	t.Cleanup(apiSrv.Close)
+
+	store := setupTestTokenStore(t, expiredToken())
+	repo := setupTestRepo(t)
+	client := NewWhoopClient(apiSrv.URL, tokenSrv.URL, wantClientID, wantClientSecret, store)
+
+	start := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC)
+	if err := client.Sync(repo, start, end); err != nil {
+		t.Fatalf("Sync failed (token endpoint rejected credentials): %v", err)
+	}
+
+	// Confirm the access token was rotated to the one the server returned.
+	tok, err := store.Load("whoop")
+	if err != nil {
+		t.Fatalf("load token: %v", err)
+	}
+	if tok.AccessToken != "acc-cred-ok" {
+		t.Errorf("access_token = %q, want acc-cred-ok", tok.AccessToken)
+	}
 }

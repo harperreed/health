@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	// WhoopAPIBaseURL is the production Whoop developer API base.
+	// WhoopAPIBaseURL is the production Whoop API host. Endpoint paths already
+	// include the /developer/v2/... prefix, so the base must be the bare host.
 	// Scopes required: read:recovery read:sleep read:cycles offline.
-	WhoopAPIBaseURL = "https://api.prod.whoop.com/developer"
+	WhoopAPIBaseURL = "https://api.prod.whoop.com"
 
 	// WhoopTokenURL is the production OAuth2 token endpoint.
 	WhoopTokenURL = "https://api.prod.whoop.com/oauth/oauth2/token" //nolint:gosec // URL, not a credential
@@ -31,21 +32,26 @@ const (
 // WhoopClient fetches health metrics from the Whoop v2 API.
 // Construct with NewWhoopClient; call Sync to pull a date window.
 type WhoopClient struct {
-	apiBase    string
-	tokenURL   string
-	store      *TokenStore
-	httpClient *http.Client
+	apiBase      string
+	tokenURL     string
+	clientID     string
+	clientSecret string
+	store        *TokenStore
+	httpClient   *http.Client
 }
 
 // NewWhoopClient returns a WhoopClient that talks to apiBaseURL and refreshes
-// tokens against tokenURL. Both are constructor parameters so tests can inject
-// httptest servers. Use WhoopAPIBaseURL and WhoopTokenURL for production.
-func NewWhoopClient(apiBaseURL, tokenURL string, store *TokenStore) *WhoopClient {
+// tokens against tokenURL. apiBaseURL and tokenURL are constructor parameters
+// so tests can inject httptest servers; use WhoopAPIBaseURL and WhoopTokenURL
+// for production. clientID and clientSecret are sent on every token refresh.
+func NewWhoopClient(apiBaseURL, tokenURL, clientID, clientSecret string, store *TokenStore) *WhoopClient {
 	return &WhoopClient{
-		apiBase:    apiBaseURL,
-		tokenURL:   tokenURL,
-		store:      store,
-		httpClient: &http.Client{Timeout: httpTimeout},
+		apiBase:      apiBaseURL,
+		tokenURL:     tokenURL,
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		store:        store,
+		httpClient:   &http.Client{Timeout: httpTimeout},
 	}
 }
 
@@ -311,6 +317,8 @@ func (c *WhoopClient) refreshToken(old Token) (Token, error) {
 	params := url.Values{}
 	params.Set("grant_type", "refresh_token")
 	params.Set("refresh_token", old.RefreshToken)
+	params.Set("client_id", c.clientID)
+	params.Set("client_secret", c.clientSecret)
 
 	resp, err := c.httpClient.PostForm(c.tokenURL, params)
 	if err != nil {
