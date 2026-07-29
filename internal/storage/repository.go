@@ -12,6 +12,11 @@ import (
 type Repository interface {
 	// Metric operations
 	CreateMetric(m *models.Metric) error
+	// UpsertMetric inserts the metric, or if a metric with the same
+	// (source, metric_type, recorded_at) already exists, updates that row's
+	// value, unit, and notes in place. Returns true when an existing row was
+	// updated. The matched row's ID and CreatedAt are reflected back into m.
+	UpsertMetric(m *models.Metric) (bool, error)
 	GetMetric(idOrPrefix string) (*models.Metric, error)
 	ListMetrics(metricType *models.MetricType, source *string, limit int) ([]*models.Metric, error)
 	DeleteMetric(idOrPrefix string) error

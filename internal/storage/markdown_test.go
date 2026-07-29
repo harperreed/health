@@ -870,6 +870,120 @@ func TestMarkdownStoreImplementsRepository(t *testing.T) {
 	_ = r
 }
 
+func TestMarkdownUpsertMetricInsertsWhenNew(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	updated, err := s.UpsertMetric(m)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if updated {
+		t.Errorf("updated = true, want false for new row")
+	}
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("count = %d, want 1", len(all))
+	}
+}
+
+func TestMarkdownUpsertMetricReplacesSameKey(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	m1 := models.NewMetric(models.MetricHRV, 48).WithSource("whoop").WithRecordedAt(at)
+	if _, err := s.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+
+	m2 := models.NewMetric(models.MetricHRV, 52).WithSource("whoop").WithRecordedAt(at)
+	m2.WithNotes("resynced")
+	updated, err := s.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if m2.ID != m1.ID {
+		t.Errorf("upsert should keep original ID: got %s, want %s", m2.ID, m1.ID)
+	}
+
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("count = %d, want 1 (no duplicate)", len(all))
+	}
+	if all[0].Value != 52 {
+		t.Errorf("Value = %v, want 52", all[0].Value)
+	}
+	if all[0].Notes == nil || *all[0].Notes != "resynced" {
+		t.Errorf("Notes not updated: %v", all[0].Notes)
+	}
+}
+
+func TestMarkdownUpsertMetricDistinguishesSources(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	m1 := models.NewMetric(models.MetricSleepHours, 7.2).WithSource("whoop").WithRecordedAt(at)
+	m2 := models.NewMetric(models.MetricSleepHours, 7.8).WithSource("emfit").WithRecordedAt(at)
+	if _, err := s.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	updated, err := s.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if updated {
+		t.Errorf("different source must not update")
+	}
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("count = %d, want 2", len(all))
+	}
+}
+
+func TestMarkdownUpsertMetricMatchesInstantAcrossZones(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	utc := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	chicago := utc.In(time.FixedZone("CDT", -5*3600))
+
+	m1 := models.NewMetric(models.MetricHeartRate, 55).WithSource("whoop").WithRecordedAt(utc)
+	if _, err := s.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	m2 := models.NewMetric(models.MetricHeartRate, 56).WithSource("whoop").WithRecordedAt(chicago)
+	updated, err := s.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("same instant in different zone must match")
+	}
+}
+
 func TestMarkdownListMetricsFilterBySource(t *testing.T) {
 	s, err := NewMarkdownStore(t.TempDir())
 	if err != nil {

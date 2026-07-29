@@ -36,6 +36,39 @@ func (d *DB) CreateMetric(m *models.Metric) error {
 	return nil
 }
 
+// UpsertMetric inserts or replaces a metric keyed on (source, metric_type, recorded_at).
+// recorded_at is compared as an instant via SQLite datetime(), so the same
+// moment expressed in different timezone offsets still matches. If legacy
+// duplicates share the key, the oldest row is updated deterministically.
+func (d *DB) UpsertMetric(m *models.Metric) (bool, error) {
+	m.Source = models.NormalizeSource(m.Source)
+
+	var existingID, existingCreatedAt string
+	err := d.db.QueryRow(`
+		SELECT id, created_at FROM metrics
+		WHERE source = ? AND metric_type = ? AND datetime(recorded_at) = datetime(?)
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1
+	`, m.Source, string(m.MetricType), m.RecordedAt.Format(time.RFC3339)).Scan(&existingID, &existingCreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, d.CreateMetric(m)
+	}
+	if err != nil {
+		return false, fmt.Errorf("upsert metric lookup: %w", err)
+	}
+
+	if _, err := d.db.Exec(`UPDATE metrics SET value = ?, unit = ?, notes = ? WHERE id = ?`,
+		m.Value, m.Unit, m.Notes, existingID); err != nil {
+		return false, fmt.Errorf("upsert metric update: %w", err)
+	}
+
+	m.ID, _ = uuid.Parse(existingID)
+	if t, perr := time.Parse(time.RFC3339, existingCreatedAt); perr == nil {
+		m.CreatedAt = t
+	}
+	return true, nil
+}
+
 // GetMetric retrieves a metric by ID or ID prefix.
 func (d *DB) GetMetric(idOrPrefix string) (*models.Metric, error) {
 	id, err := d.resolveMetricID(idOrPrefix)
