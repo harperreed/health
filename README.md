@@ -130,14 +130,112 @@ health workout show <id>
 health workout delete <id>
 ```
 
-### `health sync` - Cloud Synchronization
+### `health sync` - Native Provider Sync
+
+Pull health data from Whoop, Withings, and Emfit directly into local storage.
 
 ```bash
-health sync link      # Connect to Charm Cloud
-health sync status    # Check sync status
-health sync unlink    # Disconnect
-health sync wipe      # Reset local data from cloud
+health sync whoop               # Sync last 7 days from Whoop
+health sync withings --days 30  # Sync last 30 days from Withings
+health sync emfit               # Sync latest Emfit sleep night
 ```
+
+Sync commands are the **only** commands that touch the network; everything else is offline.
+
+#### Whoop setup
+
+1. Create an app at https://developer.whoop.com and get a client ID and secret.
+2. Add to `~/.config/health/config.json`:
+   ```json
+   {
+     "sync": {
+       "whoop": {
+         "client_id": "YOUR_CLIENT_ID",
+         "client_secret": "YOUR_CLIENT_SECRET"
+       }
+     }
+   }
+   ```
+3. Authorize (one-time):
+   ```bash
+   health sync auth whoop
+   ```
+   The command prints the authorize URL — open it in your browser. After approval, the token
+   is saved automatically. Required scopes: `read:recovery read:sleep read:cycles offline`
+   (`offline` is required for a refresh token).
+
+4. Sync:
+   ```bash
+   health sync whoop
+   health sync whoop --days 30
+   ```
+
+#### Withings setup
+
+1. Create an app at https://developer.withings.com and get a client ID and secret.
+2. Add to `~/.config/health/config.json`:
+   ```json
+   {
+     "sync": {
+       "withings": {
+         "client_id": "YOUR_CLIENT_ID",
+         "client_secret": "YOUR_CLIENT_SECRET"
+       }
+     }
+   }
+   ```
+3. Authorize (one-time):
+   ```bash
+   health sync auth withings
+   ```
+4. Sync:
+   ```bash
+   health sync withings
+   ```
+
+   Scopes granted: `user.info,user.metrics,user.activity`.
+
+#### Emfit QS setup
+
+Emfit does not use OAuth. Supply either a pre-configured token or your username/password.
+
+```json
+{
+  "sync": {
+    "emfit": {
+      "device_id": "YOUR_DEVICE_ID",
+      "token": "YOUR_STATIC_TOKEN"
+    }
+  }
+}
+```
+
+Or with login credentials (token obtained automatically each sync):
+
+```json
+{
+  "sync": {
+    "emfit": {
+      "device_id": "YOUR_DEVICE_ID",
+      "username": "you@example.com",
+      "password": "yourpassword"
+    }
+  }
+}
+```
+
+Then:
+
+```bash
+health sync emfit
+```
+
+#### Credential storage
+
+- **Config file:** `~/.config/health/config.json` — holds client IDs, secrets, and Emfit credentials.
+- **OAuth tokens:** `~/.local/share/health/tokens/<provider>.json` — written 0600, updated automatically on each token refresh.
+- Whoop and Withings refresh tokens rotate on every use and are persisted immediately.
+- The `--days` default is 7. Pass `--days N` to widen the window.
 
 ## Supported Metrics
 

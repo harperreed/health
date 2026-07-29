@@ -29,9 +29,13 @@ type OAuthProviderConfig struct {
 }
 
 // EmfitConfig holds credentials for the Emfit QS API.
+// If Token is set it is used directly (no login). Otherwise Username+Password
+// are used with POST /api/v1/login. DeviceID is always required.
 type EmfitConfig struct {
 	Token    string `json:"token,omitempty"`
 	DeviceID string `json:"device_id,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 // Config stores health tool configuration.

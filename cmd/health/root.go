@@ -47,6 +47,14 @@ DATA EXPORT:
   $ health export markdown              # Export to Markdown
   $ health import backup.json           # Import from JSON
 
+NATIVE PROVIDER SYNC:
+
+  $ health sync auth whoop              # Authorize Whoop (one-time OAuth flow)
+  $ health sync auth withings           # Authorize Withings
+  $ health sync whoop                   # Sync last 7 days from Whoop
+  $ health sync withings --days 30      # Sync 30 days from Withings
+  $ health sync emfit                   # Sync latest Emfit sleep night
+
 MCP INTEGRATION:
 
   Run 'health mcp' to start the Model Context Protocol server for use with
