@@ -1045,6 +1045,70 @@ func TestMarkdownMetricSourceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarkdownUpsertMetricUpdatesOldestLegacyDuplicate(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	olderCreatedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newerCreatedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// Seed two metrics sharing the same dedup key with distinct CreatedAt values.
+	// CreateMetric honors the pre-set CreatedAt field.
+	older := models.NewMetric(models.MetricHRV, 40).WithSource("whoop").WithRecordedAt(at)
+	older.CreatedAt = olderCreatedAt
+	if err := s.CreateMetric(older); err != nil {
+		t.Fatalf("CreateMetric older: %v", err)
+	}
+
+	newer := models.NewMetric(models.MetricHRV, 41).WithSource("whoop").WithRecordedAt(at)
+	newer.CreatedAt = newerCreatedAt
+	if err := s.CreateMetric(newer); err != nil {
+		t.Fatalf("CreateMetric newer: %v", err)
+	}
+
+	upsert := models.NewMetric(models.MetricHRV, 99).WithSource("whoop").WithRecordedAt(at)
+	updated, err := s.UpsertMetric(upsert)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if upsert.ID != older.ID {
+		t.Errorf("caller struct ID = %s, want oldest ID %s", upsert.ID, older.ID)
+	}
+
+	// Total count must stay at 2.
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("count = %d, want 2 (both duplicates still present)", len(all))
+	}
+
+	// Oldest row now has the new value.
+	gotOlder, err := s.GetMetric(older.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric older: %v", err)
+	}
+	if gotOlder.Value != 99 {
+		t.Errorf("older.Value = %v, want 99", gotOlder.Value)
+	}
+
+	// Newer duplicate is untouched.
+	gotNewer, err := s.GetMetric(newer.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric newer: %v", err)
+	}
+	if gotNewer.Value != 41 {
+		t.Errorf("newer.Value = %v, want 41 (untouched)", gotNewer.Value)
+	}
+}
+
 func TestMarkdownLegacyFileReadsManualSource(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewMarkdownStore(dir)

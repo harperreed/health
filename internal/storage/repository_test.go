@@ -1243,6 +1243,74 @@ func TestMetricSourceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestUpsertMetricUpdatesOldestLegacyDuplicate(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	olderCreatedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newerCreatedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	olderID := uuid.New()
+	newerID := uuid.New()
+
+	// Seed two rows sharing the same dedup key (source, metric_type, recorded_at)
+	// with distinct created_at values so "oldest" is unambiguous.
+	_, err := db.db.Exec(
+		`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at) VALUES (?, 'hrv', 40.0, 'ms', ?, NULL, 'whoop', ?)`,
+		olderID.String(), at.Format(time.RFC3339), olderCreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert older duplicate: %v", err)
+	}
+	_, err = db.db.Exec(
+		`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at) VALUES (?, 'hrv', 41.0, 'ms', ?, NULL, 'whoop', ?)`,
+		newerID.String(), at.Format(time.RFC3339), newerCreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert newer duplicate: %v", err)
+	}
+
+	upsert := models.NewMetric(models.MetricHRV, 99).WithSource("whoop").WithRecordedAt(at)
+	updated, err := db.UpsertMetric(upsert)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if upsert.ID != olderID {
+		t.Errorf("caller struct ID = %s, want oldest ID %s", upsert.ID, olderID)
+	}
+
+	// Total count must stay at 2.
+	all, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("count = %d, want 2 (both duplicates still present)", len(all))
+	}
+
+	// Oldest row now has the new value.
+	older, err := db.GetMetric(olderID.String())
+	if err != nil {
+		t.Fatalf("GetMetric older: %v", err)
+	}
+	if older.Value != 99 {
+		t.Errorf("older.Value = %v, want 99", older.Value)
+	}
+
+	// Newer duplicate is untouched.
+	newer, err := db.GetMetric(newerID.String())
+	if err != nil {
+		t.Fatalf("GetMetric newer: %v", err)
+	}
+	if newer.Value != 41 {
+		t.Errorf("newer.Value = %v, want 41 (untouched)", newer.Value)
+	}
+}
+
 func TestLegacyDBMigratesSourceToManual(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "legacy.db")
