@@ -460,13 +460,16 @@ func (s *MarkdownStore) GetMetric(idOrPrefix string) (*models.Metric, error) {
 	return m, err
 }
 
-// ListMetrics retrieves metrics with optional filtering by type.
+// ListMetrics retrieves metrics with optional filtering by type and source.
 // Results are sorted by RecordedAt descending (most recent first).
-func (s *MarkdownStore) ListMetrics(metricType *models.MetricType, limit int) ([]*models.Metric, error) {
+func (s *MarkdownStore) ListMetrics(metricType *models.MetricType, source *string, limit int) ([]*models.Metric, error) {
 	var metrics []*models.Metric
 
 	err := s.walkMetricFiles(func(path string, m *models.Metric) error {
 		if metricType != nil && m.MetricType != *metricType {
+			return nil
+		}
+		if source != nil && models.NormalizeSource(m.Source) != models.NormalizeSource(*source) {
 			return nil
 		}
 		metrics = append(metrics, m)
@@ -504,7 +507,7 @@ func (s *MarkdownStore) DeleteMetric(idOrPrefix string) error {
 // GetLatestMetric returns the most recent metric of a specific type.
 func (s *MarkdownStore) GetLatestMetric(metricType models.MetricType) (*models.Metric, error) {
 	mt := metricType
-	metrics, err := s.ListMetrics(&mt, 1)
+	metrics, err := s.ListMetrics(&mt, nil, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -735,7 +738,7 @@ func (s *MarkdownStore) DeleteWorkoutMetric(idOrPrefix string) error {
 
 // GetAllData retrieves all data for export.
 func (s *MarkdownStore) GetAllData() (*ExportData, error) {
-	metrics, err := s.ListMetrics(nil, 0)
+	metrics, err := s.ListMetrics(nil, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list metrics: %w", err)
 	}

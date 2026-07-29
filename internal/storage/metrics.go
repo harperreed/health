@@ -51,28 +51,27 @@ func (d *DB) GetMetric(idOrPrefix string) (*models.Metric, error) {
 	return d.scanMetric(d.db.QueryRow(query, id))
 }
 
-// ListMetrics retrieves metrics with optional filtering by type.
+// ListMetrics retrieves metrics with optional filtering by type and source.
 // Results are sorted by RecordedAt descending (most recent first).
-func (d *DB) ListMetrics(metricType *models.MetricType, limit int) ([]*models.Metric, error) {
-	var query string
+func (d *DB) ListMetrics(metricType *models.MetricType, source *string, limit int) ([]*models.Metric, error) {
+	query := `
+		SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
+		FROM metrics
+	`
+	var conds []string
 	var args []interface{}
-
 	if metricType != nil {
-		query = `
-			SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
-			FROM metrics
-			WHERE metric_type = ?
-			ORDER BY recorded_at DESC
-		`
+		conds = append(conds, "metric_type = ?")
 		args = append(args, string(*metricType))
-	} else {
-		query = `
-			SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
-			FROM metrics
-			ORDER BY recorded_at DESC
-		`
 	}
-
+	if source != nil {
+		conds = append(conds, "source = ?")
+		args = append(args, models.NormalizeSource(*source))
+	}
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ") //nolint:gosec // G202: only static column names are concatenated; all values are parameterized
+	}
+	query += " ORDER BY recorded_at DESC"
 	if limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, limit)

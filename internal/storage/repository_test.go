@@ -85,7 +85,7 @@ func TestListMetrics(t *testing.T) {
 	}
 
 	// List all metrics (should be ordered by RecordedAt DESC)
-	all, err := db.ListMetrics(nil, 0)
+	all, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestListMetrics(t *testing.T) {
 
 	// Filter by type
 	weightType := models.MetricWeight
-	weights, err := db.ListMetrics(&weightType, 0)
+	weights, err := db.ListMetrics(&weightType, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics with type failed: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestListMetrics(t *testing.T) {
 	}
 
 	// Test limit
-	limited, err := db.ListMetrics(nil, 2)
+	limited, err := db.ListMetrics(nil, nil, 2)
 	if err != nil {
 		t.Fatalf("ListMetrics with limit failed: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestImportData(t *testing.T) {
 	}
 
 	// Verify
-	metrics, err := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -781,7 +781,7 @@ func TestListMetricsNoResults(t *testing.T) {
 	defer db.Close()
 
 	// List metrics when none exist
-	metrics, err := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -953,7 +953,7 @@ func TestListMetricsWithTypeAndLimit(t *testing.T) {
 
 	// Filter by type with limit
 	weightType := models.MetricWeight
-	metrics, err := db.ListMetrics(&weightType, 2)
+	metrics, err := db.ListMetrics(&weightType, nil, 2)
 	if err != nil {
 		t.Fatalf("ListMetrics with type and limit failed: %v", err)
 	}
@@ -1063,6 +1063,47 @@ func TestWorkoutMetricWithAllFields(t *testing.T) {
 	}
 	if got.Unit == nil || *got.Unit != "min/km" {
 		t.Error("Expected Unit to be 'min/km'")
+	}
+}
+
+func TestListMetricsFilterBySource(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	for _, src := range []string{"whoop", "emfit", "whoop"} {
+		m := models.NewMetric(models.MetricSleepHours, 7.5).WithSource(src)
+		if err := db.CreateMetric(m); err != nil {
+			t.Fatalf("CreateMetric: %v", err)
+		}
+	}
+
+	src := "whoop"
+	got, err := db.ListMetrics(nil, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("whoop count = %d, want 2", len(got))
+	}
+
+	// Combined type+source filter
+	mt := models.MetricSleepHours
+	got, err = db.ListMetrics(&mt, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("combined filter count = %d, want 2", len(got))
+	}
+
+	// Filter normalizes case
+	src2 := "Emfit"
+	got, err = db.ListMetrics(nil, &src2, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("emfit count = %d, want 1", len(got))
 	}
 }
 

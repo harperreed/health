@@ -53,7 +53,7 @@ EXAMPLES:
 			metricType = &mt
 		}
 
-		metrics, err := repo.ListMetrics(metricType, listLimit)
+		metrics, err := repo.ListMetrics(metricType, nil, listLimit)
 		if err != nil {
 			return fmt.Errorf("failed to list metrics: %w", err)
 		}

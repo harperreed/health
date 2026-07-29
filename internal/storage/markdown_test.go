@@ -99,7 +99,7 @@ func TestMarkdownStoreListMetrics(t *testing.T) {
 	}
 
 	// List all metrics (should be ordered by RecordedAt DESC)
-	all, err := store.ListMetrics(nil, 0)
+	all, err := store.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestMarkdownStoreListMetrics(t *testing.T) {
 
 	// Filter by type
 	weightType := models.MetricWeight
-	weights, err := store.ListMetrics(&weightType, 0)
+	weights, err := store.ListMetrics(&weightType, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics with type failed: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestMarkdownStoreListMetrics(t *testing.T) {
 	}
 
 	// Test limit
-	limited, err := store.ListMetrics(nil, 2)
+	limited, err := store.ListMetrics(nil, nil, 2)
 	if err != nil {
 		t.Fatalf("ListMetrics with limit failed: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestMarkdownStoreGetWorkoutMetricNotFound(t *testing.T) {
 func TestMarkdownStoreListMetricsEmpty(t *testing.T) {
 	store := setupTestMarkdownStore(t)
 
-	metrics, err := store.ListMetrics(nil, 0)
+	metrics, err := store.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -649,7 +649,7 @@ func TestMarkdownStoreImportData(t *testing.T) {
 	}
 
 	// Verify
-	metrics, err := store.ListMetrics(nil, 0)
+	metrics, err := store.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -868,6 +868,49 @@ func TestMarkdownStoreImplementsRepository(t *testing.T) {
 	// Assign to interface to confirm the concrete type satisfies Repository
 	var r Repository = store
 	_ = r
+}
+
+func TestMarkdownListMetricsFilterBySource(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	for _, src := range []string{"whoop", "emfit", "whoop"} {
+		m := models.NewMetric(models.MetricSleepHours, 7.5).WithSource(src)
+		if err := s.CreateMetric(m); err != nil {
+			t.Fatalf("CreateMetric: %v", err)
+		}
+	}
+
+	src := "whoop"
+	got, err := s.ListMetrics(nil, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("whoop count = %d, want 2", len(got))
+	}
+
+	// Combined type+source filter
+	mt := models.MetricSleepHours
+	got, err = s.ListMetrics(&mt, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("combined filter count = %d, want 2", len(got))
+	}
+
+	// Filter normalizes case
+	src2 := "Emfit"
+	got, err = s.ListMetrics(nil, &src2, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("emfit count = %d, want 1", len(got))
+	}
 }
 
 func TestMarkdownMetricSourceRoundTrip(t *testing.T) {

@@ -13,7 +13,7 @@ type Repository interface {
 	// Metric operations
 	CreateMetric(m *models.Metric) error
 	GetMetric(idOrPrefix string) (*models.Metric, error)
-	ListMetrics(metricType *models.MetricType, limit int) ([]*models.Metric, error)
+	ListMetrics(metricType *models.MetricType, source *string, limit int) ([]*models.Metric, error)
 	DeleteMetric(idOrPrefix string) error
 	GetLatestMetric(metricType models.MetricType) (*models.Metric, error)
 

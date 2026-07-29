@@ -29,7 +29,7 @@ func (d *DB) GetAllData() (*ExportData, error) {
 
 // GetAllDataFromRepo retrieves all data for export from any Repository.
 func GetAllDataFromRepo(r Repository) (*ExportData, error) {
-	metrics, err := r.ListMetrics(nil, 0)
+	metrics, err := r.ListMetrics(nil, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list metrics: %w", err)
 	}
@@ -209,7 +209,7 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 	var metrics []*models.Metric
 	var err error
 
-	metrics, err = r.ListMetrics(metricType, 0)
+	metrics, err = r.ListMetrics(metricType, nil, 0)
 	if err != nil {
 		return "", err
 	}

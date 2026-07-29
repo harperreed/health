@@ -176,7 +176,7 @@ func (s *Server) handleListMetrics(ctx context.Context, req *mcp.CallToolRequest
 		metricType = &mt
 	}
 
-	metrics, err := s.repo.ListMetrics(metricType, input.Limit)
+	metrics, err := s.repo.ListMetrics(metricType, nil, input.Limit)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -287,7 +287,7 @@ func (s *Server) handleGetLatest(ctx context.Context, req *mcp.CallToolRequest, 
 	results := make(map[string]interface{})
 	for _, t := range types {
 		mt := models.MetricType(t)
-		metrics, err := s.repo.ListMetrics(&mt, 1)
+		metrics, err := s.repo.ListMetrics(&mt, nil, 1)
 		if err == nil && len(metrics) > 0 {
 			results[t] = map[string]interface{}{
 				"value":       metrics[0].Value,

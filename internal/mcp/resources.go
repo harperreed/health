@@ -42,7 +42,7 @@ func (s *Server) registerResources() {
 
 func (s *Server) handleRecentResource(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 	// Get last 10 metrics
-	metrics, err := s.repo.ListMetrics(nil, 10)
+	metrics, err := s.repo.ListMetrics(nil, nil, 10)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -78,7 +78,7 @@ func (s *Server) handleTodayResource(ctx context.Context, req *mcp.ReadResourceR
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	// Get all metrics and filter by today
-	metrics, err := s.repo.ListMetrics(nil, 1000)
+	metrics, err := s.repo.ListMetrics(nil, nil, 1000)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -131,7 +131,7 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 	// Get latest value for each metric type
 	latestMetrics := make(map[string]interface{})
 	for _, mt := range models.AllMetricTypes {
-		metrics, err := s.repo.ListMetrics(&mt, 1)
+		metrics, err := s.repo.ListMetrics(&mt, nil, 1)
 		if err == nil && len(metrics) > 0 {
 			m := metrics[0]
 			latestMetrics[string(mt)] = map[string]interface{}{

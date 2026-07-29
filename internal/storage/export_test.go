@@ -198,7 +198,7 @@ func TestImportJSON(t *testing.T) {
 	}
 
 	// Verify imported data
-	metrics, err := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -719,7 +719,7 @@ func TestImportDataMultipleItems(t *testing.T) {
 		t.Fatalf("ImportData failed: %v", err)
 	}
 
-	metrics, _ := db.ListMetrics(nil, 0)
+	metrics, _ := db.ListMetrics(nil, nil, 0)
 	if len(metrics) != 2 {
 		t.Errorf("Expected 2 metrics, got %d", len(metrics))
 	}

@@ -477,7 +477,7 @@ func TestAddCmdWithDB(t *testing.T) {
 	}
 
 	// Verify metric was created
-	metrics, err := testDB.ListMetrics(nil, 0)
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestAddCmdWithNotes(t *testing.T) {
 		t.Errorf("add command with notes failed: %v", err)
 	}
 
-	metrics, err := testDB.ListMetrics(nil, 0)
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestAddCmdBloodPressure(t *testing.T) {
 	}
 
 	// Should create 2 metrics (bp_sys and bp_dia)
-	metrics, err := testDB.ListMetrics(nil, 0)
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
