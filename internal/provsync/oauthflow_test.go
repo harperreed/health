@@ -78,24 +78,104 @@ func TestRandomState(t *testing.T) {
 // --- authorize URL construction ---
 
 func TestBuildAuthorizeURL(t *testing.T) {
+	const authURL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 	f := &OAuthFlow{
 		provider: "whoop",
 		urls: AuthorizeURLs{
-			AuthURL:     "https://api.prod.whoop.com/oauth/oauth2/auth",
+			AuthURL:     authURL,
 			ClientID:    "myclient",
 			RedirectURI: "http://localhost:42021/callback",
 			Scopes:      "read:recovery offline",
 		},
 	}
 	u := f.buildAuthorizeURL("teststate123")
-	if !strings.Contains(u, "client_id=myclient") {
+
+	// Base URL must be a prefix of the result.
+	if !strings.HasPrefix(u, authURL+"?") {
+		t.Errorf("URL does not start with expected auth base %q: %s", authURL+"?", u)
+	}
+
+	// Extract the raw query for wire-level encoding checks.
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	rawQ := parsed.RawQuery
+
+	if !strings.Contains(rawQ, "client_id=myclient") {
 		t.Errorf("URL missing client_id: %s", u)
 	}
-	if !strings.Contains(u, "state=teststate123") {
+	if !strings.Contains(rawQ, "state=teststate123") {
 		t.Errorf("URL missing state: %s", u)
 	}
-	if !strings.Contains(u, "response_type=code") {
+	if !strings.Contains(rawQ, "response_type=code") {
 		t.Errorf("URL missing response_type: %s", u)
+	}
+
+	// Scope must appear somewhere in the query.
+	if !strings.Contains(rawQ, "scope=") {
+		t.Errorf("URL missing scope parameter: %s", u)
+	}
+
+	// No bare '+' in the raw query — '+' would be decoded as a literal plus,
+	// not a space, under RFC 3986. Spaces must be encoded as %%20.
+	if strings.Contains(rawQ, "+") {
+		t.Errorf("raw query contains bare '+' (space must be %%20, not +): %s", rawQ)
+	}
+}
+
+// TestBuildAuthorizeURLWhoopScopeEncoding asserts the exact wire encoding for
+// space-separated Whoop-style scopes. Spaces → %%20; colons → %%3A.
+func TestBuildAuthorizeURLWhoopScopeEncoding(t *testing.T) {
+	const authURL = "https://api.prod.whoop.com/oauth/oauth2/auth"
+	f := &OAuthFlow{
+		provider: "whoop",
+		urls: AuthorizeURLs{
+			AuthURL:  authURL,
+			ClientID: "c",
+			Scopes:   "read:recovery read:sleep read:cycles offline",
+		},
+	}
+	u := f.buildAuthorizeURL("st")
+
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	rawQ := parsed.RawQuery
+
+	const wantScopeEncoded = "scope=read%3Arecovery%20read%3Asleep%20read%3Acycles%20offline"
+	if !strings.Contains(rawQ, wantScopeEncoded) {
+		t.Errorf("scope not encoded correctly:\n  got raw query: %s\n  want substring: %s", rawQ, wantScopeEncoded)
+	}
+	if strings.Contains(rawQ, "+") {
+		t.Errorf("raw query contains bare '+': %s", rawQ)
+	}
+}
+
+// TestBuildAuthorizeURLWithingsScopeEncoding asserts comma-separated Withings scopes
+// are encoded with %%2C (commas percent-encoded, no spaces).
+func TestBuildAuthorizeURLWithingsScopeEncoding(t *testing.T) {
+	const authURL = "https://account.withings.com/oauth2_user/authorize2"
+	f := &OAuthFlow{
+		provider: "withings",
+		urls: AuthorizeURLs{
+			AuthURL:  authURL,
+			ClientID: "c",
+			Scopes:   "user.info,user.metrics,user.activity",
+		},
+	}
+	u := f.buildAuthorizeURL("st")
+
+	parsed, err := url.Parse(u)
+	if err != nil {
+		t.Fatalf("url.Parse: %v", err)
+	}
+	rawQ := parsed.RawQuery
+
+	const wantScopeEncoded = "scope=user.info%2Cuser.metrics%2Cuser.activity"
+	if !strings.Contains(rawQ, wantScopeEncoded) {
+		t.Errorf("scope not encoded correctly:\n  got raw query: %s\n  want substring: %s", rawQ, wantScopeEncoded)
 	}
 }
 

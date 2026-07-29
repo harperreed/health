@@ -203,7 +203,13 @@ func (f *OAuthFlow) buildAuthorizeURL(state string) string {
 	q.Set("redirect_uri", f.urls.RedirectURI)
 	q.Set("state", state)
 	q.Set("scope", f.urls.Scopes)
-	return f.urls.AuthURL + "?" + q.Encode()
+	// url.Values.Encode encodes spaces as '+', which is only valid inside
+	// application/x-www-form-urlencoded bodies. RFC 3986 requires '%20' in
+	// URL query strings. Replace every bare '+' with '%20' — this is safe
+	// because Encode already encodes any literal '+' in values as '%2B', so
+	// every remaining '+' in the encoded string represents a space.
+	encoded := strings.ReplaceAll(q.Encode(), "+", "%20")
+	return f.urls.AuthURL + "?" + encoded
 }
 
 // randomState generates a 16-byte hex-encoded random state parameter.
