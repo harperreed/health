@@ -1138,11 +1138,15 @@ func TestHandleListMetricsWithSourceFilter(t *testing.T) {
 	// Add a whoop metric and a manual metric.
 	mWhoop := models.NewMetric(models.MetricHRV, 55)
 	mWhoop.WithSource("whoop")
-	db.CreateMetric(mWhoop)
+	if err := db.CreateMetric(mWhoop); err != nil {
+		t.Fatalf("CreateMetric whoop: %v", err)
+	}
 
 	mManual := models.NewMetric(models.MetricHRV, 48)
 	// Source defaults to "manual".
-	db.CreateMetric(mManual)
+	if err := db.CreateMetric(mManual); err != nil {
+		t.Fatalf("CreateMetric manual: %v", err)
+	}
 
 	_, output, err := server.handleListMetrics(ctx, &mcp.CallToolRequest{}, listMetricsInput{
 		Source: "whoop",
@@ -1170,7 +1174,9 @@ func TestHandleGetLatestContainsSource(t *testing.T) {
 
 	m := models.NewMetric(models.MetricWeight, 82.5)
 	m.WithSource("withings")
-	db.CreateMetric(m)
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric withings: %v", err)
+	}
 
 	_, output, err := server.handleGetLatest(ctx, &mcp.CallToolRequest{}, getLatestInput{
 		MetricTypes: []string{"weight"},
@@ -1206,7 +1212,9 @@ func TestHandleSummaryResourceContainsSource(t *testing.T) {
 
 	m := models.NewMetric(models.MetricWeight, 82.5)
 	m.WithSource("withings")
-	db.CreateMetric(m)
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric withings: %v", err)
+	}
 
 	result, err := server.handleSummaryResource(ctx, &mcp.ReadResourceRequest{})
 	if err != nil {
