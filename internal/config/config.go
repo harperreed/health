@@ -14,6 +14,26 @@ import (
 	"github.com/harperreed/mdstore"
 )
 
+// SyncConfig holds native provider sync settings.
+type SyncConfig struct {
+	Whoop    OAuthProviderConfig `json:"whoop,omitempty"`
+	Withings OAuthProviderConfig `json:"withings,omitempty"`
+	Emfit    EmfitConfig         `json:"emfit,omitempty"`
+}
+
+// OAuthProviderConfig holds OAuth2 client credentials for a provider.
+type OAuthProviderConfig struct {
+	ClientID     string `json:"client_id,omitempty"`
+	ClientSecret string `json:"client_secret,omitempty"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+}
+
+// EmfitConfig holds credentials for the Emfit QS API.
+type EmfitConfig struct {
+	Token    string `json:"token,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
+}
+
 // Config stores health tool configuration.
 type Config struct {
 	// Backend selects the storage backend: "sqlite" (default) or "markdown".
@@ -23,6 +43,9 @@ type Config struct {
 	// SQLite puts health.db here. Markdown puts metrics/ and workouts/ folders here.
 	// Supports ~ expansion for home directory. Defaults to ~/.local/share/health.
 	DataDir string `json:"data_dir,omitempty"`
+
+	// Sync holds native provider sync configuration.
+	Sync SyncConfig `json:"sync,omitempty"`
 }
 
 // defaultDBFilename is the SQLite database filename used for existing-user detection.
