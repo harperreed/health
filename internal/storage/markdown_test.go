@@ -869,3 +869,46 @@ func TestMarkdownStoreImplementsRepository(t *testing.T) {
 	var r Repository = store
 	_ = r
 }
+
+func TestMarkdownMetricSourceRoundTrip(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := s.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric: %v", err)
+	}
+	got, err := s.GetMetric(m.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric: %v", err)
+	}
+	if got.Source != "whoop" {
+		t.Errorf("Source = %q, want whoop", got.Source)
+	}
+}
+
+func TestMarkdownLegacyFileReadsManualSource(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewMarkdownStore(dir)
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+	// Hand-write a legacy metric file with no source key.
+	id := uuid.New()
+	path := filepath.Join(dir, "metrics", "2025", "01", "2025-01-15-weight-"+id.String()[:8]+".md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "---\nid: " + id.String() + "\nmetric_type: weight\nvalue: 80\nunit: kg\nrecorded_at: 2025-01-15T07:00:00Z\ncreated_at: 2025-01-15T07:00:00Z\n---\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+	got, err := s.GetMetric(id.String())
+	if err != nil {
+		t.Fatalf("GetMetric: %v", err)
+	}
+	if got.Source != models.SourceManual {
+		t.Errorf("legacy Source = %q, want manual", got.Source)
+	}
+}

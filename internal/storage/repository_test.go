@@ -3,6 +3,7 @@
 package storage
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1062,5 +1063,89 @@ func TestWorkoutMetricWithAllFields(t *testing.T) {
 	}
 	if got.Unit == nil || *got.Unit != "min/km" {
 		t.Error("Expected Unit to be 'min/km'")
+	}
+}
+
+func TestMetricSourceRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+	got, err := db.GetMetric(m.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric failed: %v", err)
+	}
+	if got.Source != "whoop" {
+		t.Errorf("Source = %q, want whoop", got.Source)
+	}
+
+	// Default path: no WithSource call
+	m2 := models.NewMetric(models.MetricWeight, 82.5)
+	if err := db.CreateMetric(m2); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+	got2, err := db.GetMetric(m2.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric failed: %v", err)
+	}
+	if got2.Source != models.SourceManual {
+		t.Errorf("default Source = %q, want manual", got2.Source)
+	}
+}
+
+func TestLegacyDBMigratesSourceToManual(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+
+	// Build a pre-source-column database by hand.
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	_, err = raw.Exec(`CREATE TABLE metrics (
+		id TEXT PRIMARY KEY, metric_type TEXT NOT NULL, value REAL NOT NULL,
+		unit TEXT NOT NULL, recorded_at DATETIME NOT NULL, notes TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)
+	if err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	legacyID := uuid.New().String()
+	_, err = raw.Exec(`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, created_at) VALUES (?, 'weight', 80.0, 'kg', ?, ?)`,
+		legacyID, time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open migrated db: %v", err)
+	}
+	defer db.Close()
+
+	got, err := db.GetMetric(legacyID)
+	if err != nil {
+		t.Fatalf("GetMetric legacy row: %v", err)
+	}
+	if got.Source != models.SourceManual {
+		t.Errorf("legacy Source = %q, want manual", got.Source)
+	}
+
+	// New writes into the migrated DB carry their source.
+	m := models.NewMetric(models.MetricHRV, 50).WithSource("emfit")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric on migrated db: %v", err)
+	}
+	got2, err := db.GetMetric(m.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric: %v", err)
+	}
+	if got2.Source != "emfit" {
+		t.Errorf("Source = %q, want emfit", got2.Source)
 	}
 }

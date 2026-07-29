@@ -15,9 +15,10 @@ import (
 
 // CreateMetric stores a new metric in the database.
 func (d *DB) CreateMetric(m *models.Metric) error {
+	m.Source = models.NormalizeSource(m.Source)
 	query := `
-		INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := d.db.Exec(query,
 		m.ID.String(),
@@ -26,6 +27,7 @@ func (d *DB) CreateMetric(m *models.Metric) error {
 		m.Unit,
 		m.RecordedAt.Format(time.RFC3339),
 		m.Notes,
+		m.Source,
 		m.CreatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -42,7 +44,7 @@ func (d *DB) GetMetric(idOrPrefix string) (*models.Metric, error) {
 	}
 
 	query := `
-		SELECT id, metric_type, value, unit, recorded_at, notes, created_at
+		SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
 		FROM metrics
 		WHERE id = ?
 	`
@@ -57,7 +59,7 @@ func (d *DB) ListMetrics(metricType *models.MetricType, limit int) ([]*models.Me
 
 	if metricType != nil {
 		query = `
-			SELECT id, metric_type, value, unit, recorded_at, notes, created_at
+			SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
 			FROM metrics
 			WHERE metric_type = ?
 			ORDER BY recorded_at DESC
@@ -65,7 +67,7 @@ func (d *DB) ListMetrics(metricType *models.MetricType, limit int) ([]*models.Me
 		args = append(args, string(*metricType))
 	} else {
 		query = `
-			SELECT id, metric_type, value, unit, recorded_at, notes, created_at
+			SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
 			FROM metrics
 			ORDER BY recorded_at DESC
 		`
@@ -111,7 +113,7 @@ func (d *DB) DeleteMetric(idOrPrefix string) error {
 // GetLatestMetric returns the most recent metric of a specific type.
 func (d *DB) GetLatestMetric(metricType models.MetricType) (*models.Metric, error) {
 	query := `
-		SELECT id, metric_type, value, unit, recorded_at, notes, created_at
+		SELECT id, metric_type, value, unit, recorded_at, notes, source, created_at
 		FROM metrics
 		WHERE metric_type = ?
 		ORDER BY recorded_at DESC
@@ -165,9 +167,9 @@ func (d *DB) resolveMetricID(idOrPrefix string) (string, error) {
 func (d *DB) scanMetric(row *sql.Row) (*models.Metric, error) {
 	var m models.Metric
 	var idStr, metricType, recordedAt, createdAt string
-	var notes sql.NullString
+	var notes, source sql.NullString
 
-	err := row.Scan(&idStr, &metricType, &m.Value, &m.Unit, &recordedAt, &notes, &createdAt)
+	err := row.Scan(&idStr, &metricType, &m.Value, &m.Unit, &recordedAt, &notes, &source, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("not found")
@@ -182,6 +184,7 @@ func (d *DB) scanMetric(row *sql.Row) (*models.Metric, error) {
 	if notes.Valid {
 		m.Notes = &notes.String
 	}
+	m.Source = models.NormalizeSource(source.String)
 
 	return &m, nil
 }
@@ -193,9 +196,9 @@ func (d *DB) scanMetrics(rows *sql.Rows) ([]*models.Metric, error) {
 	for rows.Next() {
 		var m models.Metric
 		var idStr, metricType, recordedAt, createdAt string
-		var notes sql.NullString
+		var notes, source sql.NullString
 
-		err := rows.Scan(&idStr, &metricType, &m.Value, &m.Unit, &recordedAt, &notes, &createdAt)
+		err := rows.Scan(&idStr, &metricType, &m.Value, &m.Unit, &recordedAt, &notes, &source, &createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("scan metric: %w", err)
 		}
@@ -207,6 +210,7 @@ func (d *DB) scanMetrics(rows *sql.Rows) ([]*models.Metric, error) {
 		if notes.Valid {
 			m.Notes = &notes.String
 		}
+		m.Source = models.NormalizeSource(source.String)
 
 		metrics = append(metrics, &m)
 	}

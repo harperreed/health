@@ -75,6 +75,7 @@ type metricFrontmatter struct {
 	MetricType string  `yaml:"metric_type"`
 	Value      float64 `yaml:"value"`
 	Unit       string  `yaml:"unit"`
+	Source     string  `yaml:"source,omitempty"`
 	RecordedAt string  `yaml:"recorded_at"`
 	CreatedAt  string  `yaml:"created_at"`
 }
@@ -118,6 +119,7 @@ func metricFromFrontmatter(fm *metricFrontmatter, notes string) (*models.Metric,
 		MetricType: models.MetricType(fm.MetricType),
 		Value:      fm.Value,
 		Unit:       fm.Unit,
+		Source:     models.NormalizeSource(fm.Source),
 		RecordedAt: recordedAt,
 		CreatedAt:  createdAt,
 	}
@@ -134,6 +136,7 @@ func metricToFrontmatter(m *models.Metric) metricFrontmatter {
 		MetricType: string(m.MetricType),
 		Value:      m.Value,
 		Unit:       m.Unit,
+		Source:     models.NormalizeSource(m.Source),
 		RecordedAt: mdstore.FormatTime(m.RecordedAt.UTC()),
 		CreatedAt:  mdstore.FormatTime(m.CreatedAt.UTC()),
 	}
@@ -447,6 +450,7 @@ func (s *MarkdownStore) findWorkoutFile(idOrPrefix string) (string, *models.Work
 
 // CreateMetric stores a new metric as a markdown file.
 func (s *MarkdownStore) CreateMetric(m *models.Metric) error {
+	m.Source = models.NormalizeSource(m.Source)
 	return s.writeMetricFile(m)
 }
 
