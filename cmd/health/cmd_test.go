@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/models"
 	"github.com/harperreed/health/internal/storage"
 	"github.com/spf13/cobra"
@@ -1868,22 +1869,27 @@ func TestAllAddMetricTypes(t *testing.T) {
 	}
 }
 
-// captureStdout redirects os.Stdout for the duration of f and returns all
-// bytes written to it. color writes directly to os.Stdout, so cobra's
-// SetOut is not sufficient for capturing color output.
+// captureStdout redirects both os.Stdout and color.Output for the duration
+// of f and returns all bytes written to either. Swapping color.Output is
+// necessary because fatih/color writes through its own package-level writer
+// (initialized to colorable.NewColorableStdout() at init) rather than
+// os.Stdout, so cobra's SetOut is not sufficient.
 func captureStdout(t *testing.T, f func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
-	old := os.Stdout
+	oldStdout := os.Stdout
+	oldColorOut := color.Output
 	os.Stdout = w
+	color.Output = w
 
 	f()
 
 	w.Close()
-	os.Stdout = old
+	os.Stdout = oldStdout
+	color.Output = oldColorOut
 
 	var buf bytes.Buffer
 	if _, err := buf.ReadFrom(r); err != nil {
@@ -1936,25 +1942,24 @@ func TestAddCmdDedupeUpsert(t *testing.T) {
 
 	ts := "2026-07-28 07:00"
 
-	// First run — creates the row
+	// Reset flags once — cobra re-parses them from SetArgs on each Execute call.
 	addAt = ""
 	addNotes = ""
 	addSource = ""
 	addDedupe = false
-	captureStdout(t, func() {
+
+	// First run — creates the row; verify the "Added" verb.
+	out1 := captureStdout(t, func() {
 		rootCmd.SetArgs([]string{"add", "hrv", "48", "--source", "whoop", "--at", ts, "--dedupe"})
 		if err := rootCmd.Execute(); err != nil {
 			t.Errorf("first add --dedupe failed: %v", err)
 		}
 	})
+	if !strings.Contains(out1, "Added") {
+		t.Errorf("First run: expected 'Added' verb in output, got: %q", out1)
+	}
 
-	// Second run — should update not insert
-	addAt = ""
-	addNotes = ""
-	addSource = ""
-	addDedupe = false
-	// Capture the fmt.Printf detail line (color.Green goes to the real stdout
-	// via colorable and cannot be redirected here, but fmt.Printf can).
+	// Second run — should update the existing row, not insert a new one.
 	out2 := captureStdout(t, func() {
 		rootCmd.SetArgs([]string{"add", "hrv", "48", "--source", "whoop", "--at", ts, "--dedupe"})
 		if err := rootCmd.Execute(); err != nil {
@@ -1962,7 +1967,7 @@ func TestAddCmdDedupeUpsert(t *testing.T) {
 		}
 	})
 
-	// Only one row should exist
+	// Only one row should exist.
 	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
@@ -1971,11 +1976,12 @@ func TestAddCmdDedupeUpsert(t *testing.T) {
 		t.Errorf("Expected 1 metric after dedupe, got %d", len(metrics))
 	}
 
-	// The detail line (from fmt.Printf) should appear; color.Green output
-	// cannot be captured here but the storage check above confirms the
-	// update path ran. Verify the detail line contains the source.
+	// The "✓ Updated" verb must appear (color.Output is now redirected by captureStdout).
+	if !strings.Contains(out2, "Updated") {
+		t.Errorf("Second run: expected 'Updated' verb in output, got: %q", out2)
+	}
 	if !strings.Contains(out2, "[whoop]") {
-		t.Errorf("Expected second run detail line to contain '[whoop]', got: %q", out2)
+		t.Errorf("Second run: expected '[whoop]' in detail line, got: %q", out2)
 	}
 }
 
@@ -2004,6 +2010,52 @@ func TestAddCmdBPWithSource(t *testing.T) {
 		if m.Source != "withings" {
 			t.Errorf("Expected source 'withings' for %s, got %q", m.MetricType, m.Source)
 		}
+	}
+}
+
+func TestAddCmdBPDedupeUpsert(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	ts := "2026-07-28 08:00"
+
+	// Reset flags once — cobra re-parses them from SetArgs on each Execute call.
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	// First run — creates both bp_sys and bp_dia rows; verify "Added blood pressure".
+	out1 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "bp", "120", "80", "--source", "withings", "--at", ts, "--dedupe"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("first add bp --dedupe failed: %v", err)
+		}
+	})
+	if !strings.Contains(out1, "Added") {
+		t.Errorf("First run: expected 'Added' verb in output, got: %q", out1)
+	}
+
+	// Second run — should upsert both rows, leaving exactly 2 metrics (not 4).
+	out2 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "bp", "120", "80", "--source", "withings", "--at", ts, "--dedupe"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("second add bp --dedupe failed: %v", err)
+		}
+	})
+
+	// Exactly 2 rows (bp_sys + bp_dia) — not 4.
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 2 {
+		t.Errorf("Expected 2 metrics after BP dedupe, got %d", len(metrics))
+	}
+
+	// The "✓ Updated blood pressure" line must appear.
+	if !strings.Contains(out2, "Updated") {
+		t.Errorf("Second run: expected 'Updated' verb in output, got: %q", out2)
 	}
 }
 
