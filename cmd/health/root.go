@@ -21,8 +21,8 @@ var rootCmd = &cobra.Command{
 
 WHAT IT TRACKS:
 
-  Biometrics     weight, body_fat, bp (blood pressure), heart_rate, hrv, temperature
-  Activity       steps, sleep_hours, active_calories
+  Biometrics     weight, body_fat, bp (blood pressure), heart_rate, hrv, temperature, respiratory_rate, spo2
+  Activity       steps, sleep_hours, active_calories, recovery, strain
   Nutrition      water, calories, protein, carbs, fat
   Mental Health  mood, energy, stress, anxiety, focus, meditation
 

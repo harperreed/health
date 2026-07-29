@@ -28,17 +28,21 @@ var addCmd = &cobra.Command{
 METRIC TYPES:
 
   Biometrics:
-    weight         Body weight in kg
-    body_fat       Body fat percentage
-    bp             Blood pressure (requires TWO values: systolic diastolic)
-    heart_rate     Resting heart rate in bpm
-    hrv            Heart rate variability in ms
-    temperature    Body temperature in °C
+    weight            Body weight in kg
+    body_fat          Body fat percentage
+    bp                Blood pressure (requires TWO values: systolic diastolic)
+    heart_rate        Resting heart rate in bpm
+    hrv               Heart rate variability in ms
+    temperature       Body temperature in °C
+    respiratory_rate  Breathing rate in brpm
+    spo2              Blood oxygen saturation %
 
   Activity:
-    steps          Daily step count
-    sleep_hours    Hours of sleep
-    active_calories Calories burned through activity
+    steps             Daily step count
+    sleep_hours       Hours of sleep
+    active_calories   Calories burned through activity
+    recovery          Recovery score (0-100%)
+    strain            Strain score (0-21)
 
   Nutrition:
     water          Water intake in ml
@@ -70,6 +74,7 @@ EXAMPLES:
   health add steps 10432                    # Daily steps
   health add sleep_hours 7.5                # Sleep duration
   health add hrv 48 --source whoop --dedupe   # Idempotent sync write
+  health add recovery 85 --source whoop     # Recovery score from Whoop
 
 TIMESTAMPS:
 

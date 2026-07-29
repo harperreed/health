@@ -217,7 +217,7 @@ func TestNewMetricSetsCreatedAt(t *testing.T) {
 }
 
 func TestAllMetricTypesSlice(t *testing.T) {
-	expectedCount := 21 // Total number of metric types
+	expectedCount := 25 // Total number of metric types
 
 	if len(AllMetricTypes) != expectedCount {
 		t.Errorf("AllMetricTypes has %d types, want %d", len(AllMetricTypes), expectedCount)
@@ -288,5 +288,26 @@ func TestValidMetricTypesList(t *testing.T) {
 	list := ValidMetricTypesList()
 	if !strings.Contains(list, "weight") || !strings.Contains(list, "meditation") {
 		t.Errorf("ValidMetricTypesList missing types: %s", list)
+	}
+}
+
+func TestNewMetricTypesAreValid(t *testing.T) {
+	cases := []struct {
+		name string
+		unit string
+	}{
+		{"recovery", "%"},
+		{"strain", "score"},
+		{"respiratory_rate", "brpm"},
+		{"spo2", "%"},
+	}
+	for _, c := range cases {
+		if !IsValidMetricType(c.name) {
+			t.Errorf("IsValidMetricType(%q) = false, want true", c.name)
+		}
+		m := NewMetric(MetricType(c.name), 50)
+		if m.Unit != c.unit {
+			t.Errorf("unit for %s = %q, want %q", c.name, m.Unit, c.unit)
+		}
 	}
 }

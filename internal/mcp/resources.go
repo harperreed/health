@@ -159,10 +159,11 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 	biometricTypes := []models.MetricType{
 		models.MetricWeight, models.MetricBodyFat, models.MetricBPSys,
 		models.MetricBPDia, models.MetricHeartRate, models.MetricHRV,
-		models.MetricTemperature,
+		models.MetricTemperature, models.MetricRespiratoryRate, models.MetricSpO2,
 	}
 	activityTypes := []models.MetricType{
 		models.MetricSteps, models.MetricSleepHours, models.MetricActiveCalories,
+		models.MetricRecovery, models.MetricStrain,
 	}
 	nutritionTypes := []models.MetricType{
 		models.MetricWater, models.MetricCalories, models.MetricProtein,

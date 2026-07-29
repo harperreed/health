@@ -1226,6 +1226,31 @@ func TestHandleSummaryResourceContainsSource(t *testing.T) {
 	}
 }
 
+func TestHandleSummaryResourceNewTypes(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	// Store spo2 (biometrics) and strain (activity).
+	db.CreateMetric(models.NewMetric(models.MetricSpO2, 98))
+	db.CreateMetric(models.NewMetric(models.MetricStrain, 14.5))
+
+	result, err := server.handleSummaryResource(ctx, &mcp.ReadResourceRequest{})
+	if err != nil {
+		t.Fatalf("handleSummaryResource: %v", err)
+	}
+
+	text := result.Contents[0].Text
+
+	// spo2 should appear under biometrics, strain under activity.
+	if !contains(text, `"spo2"`) {
+		t.Error("Expected spo2 in summary output")
+	}
+	if !contains(text, `"strain"`) {
+		t.Error("Expected strain in summary output")
+	}
+}
+
 // Helper function.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))

@@ -33,7 +33,9 @@ FILTERING:
 
   Use --type to filter by metric type:
     weight, body_fat, bp_sys, bp_dia, heart_rate, hrv, temperature,
-    steps, sleep_hours, active_calories, water, calories, protein,
+    respiratory_rate, spo2,
+    steps, sleep_hours, active_calories, recovery, strain,
+    water, calories, protein,
     carbs, fat, mood, energy, stress, anxiety, focus, meditation
 
   Use --source to filter by data source:
