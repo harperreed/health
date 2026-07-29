@@ -139,6 +139,7 @@ func (s *Server) handleSummaryResource(ctx context.Context, req *mcp.ReadResourc
 				"unit":        m.Unit,
 				"recorded_at": m.RecordedAt.Format(time.RFC3339),
 				"notes":       m.Notes,
+				"source":      m.Source,
 			}
 		}
 	}
