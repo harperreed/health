@@ -3,6 +3,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,33 @@ const (
 	MetricFocus      MetricType = "focus"
 	MetricMeditation MetricType = "meditation"
 )
+
+// Known metric sources. Source is free-form; these are the built-in ones.
+const (
+	SourceManual   = "manual"
+	SourceWhoop    = "whoop"
+	SourceWithings = "withings"
+	SourceEmfit    = "emfit"
+)
+
+// NormalizeSource canonicalizes a source string: trimmed, lowercased,
+// empty defaults to manual.
+func NormalizeSource(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return SourceManual
+	}
+	return s
+}
+
+// ValidMetricTypesList returns all metric type names joined for help/error text.
+func ValidMetricTypesList() string {
+	names := make([]string, len(AllMetricTypes))
+	for i, mt := range AllMetricTypes {
+		names[i] = string(mt)
+	}
+	return strings.Join(names, ", ")
+}
 
 // MetricUnits maps metric types to their display units.
 var MetricUnits = map[MetricType]string{
@@ -94,6 +122,7 @@ type Metric struct {
 	Unit       string
 	RecordedAt time.Time
 	Notes      *string
+	Source     string
 	CreatedAt  time.Time
 }
 
@@ -106,6 +135,7 @@ func NewMetric(metricType MetricType, value float64) *Metric {
 		Value:      value,
 		Unit:       MetricUnits[metricType],
 		RecordedAt: now,
+		Source:     SourceManual,
 		CreatedAt:  now,
 	}
 }
@@ -119,5 +149,11 @@ func (m *Metric) WithRecordedAt(t time.Time) *Metric {
 // WithNotes sets notes on the metric.
 func (m *Metric) WithNotes(notes string) *Metric {
 	m.Notes = &notes
+	return m
+}
+
+// WithSource sets the data source (whoop, withings, emfit, manual, or custom).
+func (m *Metric) WithSource(source string) *Metric {
+	m.Source = NormalizeSource(source)
 	return m
 }

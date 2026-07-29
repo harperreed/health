@@ -228,11 +228,11 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 	var sb strings.Builder
 	now := time.Now()
 
-	sb.WriteString(fmt.Sprintf("# Health Export - %s\n\n", now.Format("2006-01-02")))
-	sb.WriteString(fmt.Sprintf("Generated: %s\n\n", now.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "# Health Export - %s\n\n", now.Format("2006-01-02"))
+	fmt.Fprintf(&sb, "Generated: %s\n\n", now.Format(time.RFC3339))
 
 	if metricType != nil {
-		sb.WriteString(fmt.Sprintf("## %s\n\n", *metricType))
+		fmt.Fprintf(&sb, "## %s\n\n", *metricType)
 		sb.WriteString("| Date | Value | Notes |\n")
 		sb.WriteString("|------|-------|-------|\n")
 		for _, m := range metrics {
@@ -240,9 +240,9 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 			if m.Notes != nil {
 				notes = *m.Notes
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %.2f %s | %s |\n",
+			fmt.Fprintf(&sb, "| %s | %.2f %s | %s |\n",
 				m.RecordedAt.Format("2006-01-02 15:04"),
-				m.Value, m.Unit, notes))
+				m.Value, m.Unit, notes)
 		}
 	} else {
 		// Group by metric type
@@ -261,7 +261,7 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 		})
 
 		for _, t := range types {
-			sb.WriteString(fmt.Sprintf("## %s\n\n", t))
+			fmt.Fprintf(&sb, "## %s\n\n", t)
 			sb.WriteString("| Date | Value | Notes |\n")
 			sb.WriteString("|------|-------|-------|\n")
 			for _, m := range grouped[t] {
@@ -269,9 +269,9 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 				if m.Notes != nil {
 					notes = *m.Notes
 				}
-				sb.WriteString(fmt.Sprintf("| %s | %.2f %s | %s |\n",
+				fmt.Fprintf(&sb, "| %s | %.2f %s | %s |\n",
 					m.RecordedAt.Format("2006-01-02 15:04"),
-					m.Value, m.Unit, notes))
+					m.Value, m.Unit, notes)
 			}
 			sb.WriteString("\n")
 		}
@@ -303,9 +303,9 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 					if w.Notes != nil {
 						notes = *w.Notes
 					}
-					sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+					fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n",
 						w.StartedAt.Format("2006-01-02 15:04"),
-						w.WorkoutType, duration, notes))
+						w.WorkoutType, duration, notes)
 				}
 			}
 		}

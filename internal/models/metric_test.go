@@ -3,6 +3,7 @@
 package models
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -244,5 +245,42 @@ func TestMetricChaining(t *testing.T) {
 	}
 	if m.Notes == nil || *m.Notes != "chained call" {
 		t.Error("Notes should be 'chained call'")
+	}
+}
+
+func TestNewMetricDefaultsToManualSource(t *testing.T) {
+	m := NewMetric(MetricWeight, 82.5)
+	if m.Source != SourceManual {
+		t.Errorf("Source = %q, want %q", m.Source, SourceManual)
+	}
+}
+
+func TestWithSource(t *testing.T) {
+	m := NewMetric(MetricHRV, 48).WithSource("whoop")
+	if m.Source != "whoop" {
+		t.Errorf("Source = %q, want whoop", m.Source)
+	}
+}
+
+func TestNormalizeSource(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", "manual"},
+		{"  ", "manual"},
+		{"Whoop", "whoop"},
+		{" EMFIT ", "emfit"},
+		{"withings", "withings"},
+		{"my-custom-device", "my-custom-device"},
+	}
+	for _, c := range cases {
+		if got := NormalizeSource(c.in); got != c.want {
+			t.Errorf("NormalizeSource(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestValidMetricTypesList(t *testing.T) {
+	list := ValidMetricTypesList()
+	if !strings.Contains(list, "weight") || !strings.Contains(list, "meditation") {
+		t.Errorf("ValidMetricTypesList missing types: %s", list)
 	}
 }
