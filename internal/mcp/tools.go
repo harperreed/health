@@ -140,6 +140,9 @@ func (s *Server) handleAddMetric(ctx context.Context, req *mcp.CallToolRequest, 
 	if !models.IsValidMetricType(input.MetricType) {
 		return nil, metricOutput{}, fmt.Errorf("unknown metric type: %s", input.MetricType)
 	}
+	if err := models.ValidateValue(models.MetricType(input.MetricType), input.Value); err != nil {
+		return nil, metricOutput{}, err
+	}
 
 	m := models.NewMetric(models.MetricType(input.MetricType), input.Value)
 

@@ -2172,3 +2172,47 @@ func TestRuntimeErrorDoesNotPrintUsage(t *testing.T) {
 		t.Errorf("runtime error printed usage text:\n%s", combined)
 	}
 }
+
+func TestAddRejectsOutOfRangeValue(t *testing.T) {
+	_, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	rootCmd.SetArgs([]string{"add", "spo2", "150"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Error("expected error for spo2 150, got nil")
+	}
+
+	rootCmd.SetArgs([]string{"add", "bp", "400", "80"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Error("expected error for bp 400/80, got nil")
+	}
+}
+
+func TestVersionFlagPrintsVersion(t *testing.T) {
+	_, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	defer func() {
+		rootCmd.SetOut(nil)
+		// The version flag is global rootCmd state; reset so later tests
+		// re-running Execute do not short-circuit into version output.
+		if f := rootCmd.Flags().Lookup("version"); f != nil {
+			_ = rootCmd.Flags().Set("version", "false")
+		}
+	}()
+
+	rootCmd.SetArgs([]string{"--version"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("--version failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "dev") {
+		t.Errorf("version output %q should contain \"dev\"", out.String())
+	}
+}

@@ -103,6 +103,9 @@ TIMESTAMPS:
 		if err != nil {
 			return fmt.Errorf("invalid value: %s", args[1])
 		}
+		if err := models.ValidateValue(models.MetricType(metricType), value); err != nil {
+			return err
+		}
 
 		m := models.NewMetric(models.MetricType(metricType), value)
 
@@ -156,6 +159,12 @@ func addBloodPressure(sysStr, diaStr string) error {
 	if err != nil {
 		return fmt.Errorf("invalid diastolic value: %s", diaStr)
 	}
+	if err := models.ValidateValue(models.MetricBPSys, sys); err != nil {
+		return err
+	}
+	if err := models.ValidateValue(models.MetricBPDia, dia); err != nil {
+		return err
+	}
 
 	// Use same timestamp for both
 	var recordedAt time.Time
@@ -166,7 +175,7 @@ func addBloodPressure(sysStr, diaStr string) error {
 			return fmt.Errorf("invalid timestamp: %s", addAt)
 		}
 	} else {
-		recordedAt = time.Now()
+		recordedAt = time.Now().UTC()
 	}
 
 	mSys := models.NewMetric(models.MetricBPSys, sys).WithRecordedAt(recordedAt)

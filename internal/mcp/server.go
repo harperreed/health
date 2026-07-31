@@ -15,12 +15,16 @@ type Server struct {
 	repo      storage.Repository
 }
 
-// NewServer creates a new MCP server with the given storage.
-func NewServer(repo storage.Repository) (*Server, error) {
+// NewServer creates a new MCP server with the given storage. The version
+// is reported in the MCP server info; empty falls back to "dev".
+func NewServer(repo storage.Repository, version string) (*Server, error) {
+	if version == "" {
+		version = "dev"
+	}
 	mcpServer := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    "health",
-			Version: "1.0.0",
+			Version: version,
 		},
 		nil,
 	)

@@ -38,7 +38,7 @@ func setupTestDB(t *testing.T) *storage.DB {
 func TestNewServer(t *testing.T) {
 	db := setupTestDB(t)
 
-	server, err := NewServer(db)
+	server, err := NewServer(db, "test")
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestNewServer(t *testing.T) {
 
 func TestHandleAddMetric(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	tests := []struct {
@@ -147,7 +147,7 @@ func TestHandleAddMetric(t *testing.T) {
 
 func TestHandleListMetrics(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add some test metrics
@@ -200,7 +200,7 @@ func TestHandleListMetrics(t *testing.T) {
 
 func TestHandleListMetricsEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, output, err := server.handleListMetrics(ctx, &mcp.CallToolRequest{}, listMetricsInput{})
@@ -216,7 +216,7 @@ func TestHandleListMetricsEmpty(t *testing.T) {
 
 func TestHandleDeleteMetric(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create a metric to delete
@@ -244,7 +244,7 @@ func TestHandleDeleteMetric(t *testing.T) {
 
 func TestHandleDeleteMetricNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, _, err := server.handleDeleteMetric(ctx, &mcp.CallToolRequest{}, deleteMetricInput{
@@ -258,7 +258,7 @@ func TestHandleDeleteMetricNotFound(t *testing.T) {
 
 func TestHandleAddWorkout(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	tests := []struct {
@@ -315,7 +315,7 @@ func TestHandleAddWorkout(t *testing.T) {
 
 func TestHandleAddWorkoutMetric(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create a workout first
@@ -362,7 +362,7 @@ func TestHandleAddWorkoutMetric(t *testing.T) {
 
 func TestHandleAddWorkoutMetricNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, _, err := server.handleAddWorkoutMetric(ctx, &mcp.CallToolRequest{}, addWorkoutMetricInput{
@@ -378,7 +378,7 @@ func TestHandleAddWorkoutMetricNotFound(t *testing.T) {
 
 func TestHandleListWorkouts(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create test workouts
@@ -420,7 +420,7 @@ func TestHandleListWorkouts(t *testing.T) {
 
 func TestHandleListWorkoutsEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, output, err := server.handleListWorkouts(ctx, &mcp.CallToolRequest{}, listWorkoutsInput{})
@@ -435,7 +435,7 @@ func TestHandleListWorkoutsEmpty(t *testing.T) {
 
 func TestHandleGetWorkout(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create a workout with metrics
@@ -460,7 +460,7 @@ func TestHandleGetWorkout(t *testing.T) {
 
 func TestHandleGetWorkoutNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, _, err := server.handleGetWorkout(ctx, &mcp.CallToolRequest{}, getWorkoutInput{
@@ -474,7 +474,7 @@ func TestHandleGetWorkoutNotFound(t *testing.T) {
 
 func TestHandleDeleteWorkout(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create a workout
@@ -501,7 +501,7 @@ func TestHandleDeleteWorkout(t *testing.T) {
 
 func TestHandleDeleteWorkoutNotFound(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, _, err := server.handleDeleteWorkout(ctx, &mcp.CallToolRequest{}, getWorkoutInput{
@@ -515,7 +515,7 @@ func TestHandleDeleteWorkoutNotFound(t *testing.T) {
 
 func TestHandleGetLatest(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add metrics
@@ -557,7 +557,7 @@ func TestHandleGetLatest(t *testing.T) {
 
 func TestHandleRecentResource(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add some data
@@ -591,7 +591,7 @@ func TestHandleRecentResource(t *testing.T) {
 
 func TestHandleTodayResource(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add a metric for today
@@ -620,7 +620,7 @@ func TestHandleTodayResource(t *testing.T) {
 
 func TestHandleTodayResourceFiltersOldData(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add an old metric (yesterday)
@@ -650,7 +650,7 @@ func TestHandleTodayResourceFiltersOldData(t *testing.T) {
 
 func TestHandleSummaryResource(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add various metrics
@@ -697,7 +697,7 @@ func TestHandleSummaryResource(t *testing.T) {
 
 func TestHandleSummaryResourceEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Don't add any data - test empty state
@@ -713,7 +713,7 @@ func TestHandleSummaryResourceEmpty(t *testing.T) {
 
 func TestHandleRecentResourceEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Don't add any data
@@ -729,7 +729,7 @@ func TestHandleRecentResourceEmpty(t *testing.T) {
 
 func TestHandleTodayResourceEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Don't add any data
@@ -745,7 +745,7 @@ func TestHandleTodayResourceEmpty(t *testing.T) {
 
 func TestHandleTodayResourceFiltersOldWorkouts(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add an old workout (yesterday)
@@ -774,7 +774,7 @@ func TestHandleTodayResourceFiltersOldWorkouts(t *testing.T) {
 
 func TestHandleAddMetricWithInvalidTimestamp(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Invalid timestamp format - should still work but use current time
@@ -795,7 +795,7 @@ func TestHandleAddMetricWithInvalidTimestamp(t *testing.T) {
 
 func TestHandleGetLatestEmpty(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Get latest with no data
@@ -816,7 +816,7 @@ func TestHandleGetLatestEmpty(t *testing.T) {
 
 func TestHandleSummaryResourceWithAllCategories(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add metrics from all categories
@@ -877,7 +877,7 @@ func TestHandleSummaryResourceWithAllCategories(t *testing.T) {
 
 func TestHandleAddWorkoutWithAllFields(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, output, err := server.handleAddWorkout(ctx, &mcp.CallToolRequest{}, addWorkoutInput{
@@ -896,7 +896,7 @@ func TestHandleAddWorkoutWithAllFields(t *testing.T) {
 
 func TestHandleListMetricsWithInvalidType(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Invalid metric type - should still work but return empty
@@ -917,7 +917,7 @@ func TestHandleListMetricsWithInvalidType(t *testing.T) {
 
 func TestHandleListWorkoutsWithFilter(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create workouts of different types
@@ -949,7 +949,7 @@ func TestHandleListWorkoutsWithFilter(t *testing.T) {
 
 func TestHandleRecentResourceWithData(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add multiple metrics
@@ -979,7 +979,7 @@ func TestHandleRecentResourceWithData(t *testing.T) {
 
 func TestHandleAddWorkoutMetricWithError(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Create a workout
@@ -1001,7 +1001,7 @@ func TestHandleAddWorkoutMetricWithError(t *testing.T) {
 
 func TestHandleGetLatestWithSpecificTypes(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add metrics
@@ -1034,7 +1034,7 @@ func TestHandleGetLatestWithSpecificTypes(t *testing.T) {
 
 func TestHandleAddWorkoutZeroDuration(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Duration of 0 should not be set
@@ -1053,7 +1053,7 @@ func TestHandleAddWorkoutZeroDuration(t *testing.T) {
 
 func TestHandleAddMetricWithSource(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	_, output, err := server.handleAddMetric(ctx, &mcp.CallToolRequest{}, addMetricInput{
@@ -1083,7 +1083,7 @@ func TestHandleAddMetricWithSource(t *testing.T) {
 
 func TestHandleAddMetricDedupe(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	ts := "2026-01-15T08:00:00Z"
@@ -1133,7 +1133,7 @@ func TestHandleAddMetricDedupe(t *testing.T) {
 
 func TestHandleListMetricsWithSourceFilter(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Add a whoop metric and a manual metric.
@@ -1170,7 +1170,7 @@ func TestHandleListMetricsWithSourceFilter(t *testing.T) {
 
 func TestHandleGetLatestContainsSource(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	m := models.NewMetric(models.MetricWeight, 82.5)
@@ -1208,7 +1208,7 @@ func TestHandleGetLatestContainsSource(t *testing.T) {
 
 func TestHandleSummaryResourceContainsSource(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	m := models.NewMetric(models.MetricWeight, 82.5)
@@ -1229,7 +1229,7 @@ func TestHandleSummaryResourceContainsSource(t *testing.T) {
 
 func TestHandleSummaryResourceNewTypes(t *testing.T) {
 	db := setupTestDB(t)
-	server, _ := NewServer(db)
+	server, _ := NewServer(db, "test")
 	ctx := context.Background()
 
 	// Store spo2 (biometrics) and strain (activity).
@@ -1305,4 +1305,18 @@ func containsImpl(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestAddMetricRejectsOutOfRangeValue(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db, "test")
+	ctx := context.Background()
+
+	_, _, err := server.handleAddMetric(ctx, &mcp.CallToolRequest{}, addMetricInput{
+		MetricType: "spo2",
+		Value:      150,
+	})
+	if err == nil {
+		t.Error("expected error for out-of-range spo2, got nil")
+	}
 }
