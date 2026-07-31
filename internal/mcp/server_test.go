@@ -4,6 +4,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1047,6 +1048,248 @@ func TestHandleAddWorkoutZeroDuration(t *testing.T) {
 	}
 	if output.WorkoutType != "yoga" {
 		t.Errorf("Expected WorkoutType 'yoga', got %s", output.WorkoutType)
+	}
+}
+
+func TestHandleAddMetricWithSource(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	_, output, err := server.handleAddMetric(ctx, &mcp.CallToolRequest{}, addMetricInput{
+		MetricType: "hrv",
+		Value:      55,
+		Source:     "whoop",
+	})
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if output.Source != "whoop" {
+		t.Errorf("Source = %q, want %q", output.Source, "whoop")
+	}
+
+	// Verify the metric was stored with the correct source.
+	metrics, err := db.ListMetrics(nil, nil, 1)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(metrics) == 0 {
+		t.Fatal("Expected at least one metric")
+	}
+	if metrics[0].Source != "whoop" {
+		t.Errorf("Stored Source = %q, want %q", metrics[0].Source, "whoop")
+	}
+}
+
+func TestHandleAddMetricDedupe(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	ts := "2026-01-15T08:00:00Z"
+
+	// First upsert — creates.
+	_, out1, err := server.handleAddMetric(ctx, &mcp.CallToolRequest{}, addMetricInput{
+		MetricType: "hrv",
+		Value:      55,
+		RecordedAt: ts,
+		Source:     "whoop",
+		Dedupe:     true,
+	})
+	if err != nil {
+		t.Fatalf("First upsert: %v", err)
+	}
+	if out1.Updated {
+		t.Error("First insert should not be Updated=true")
+	}
+
+	// Second upsert — same key, should replace.
+	_, out2, err := server.handleAddMetric(ctx, &mcp.CallToolRequest{}, addMetricInput{
+		MetricType: "hrv",
+		Value:      60,
+		RecordedAt: ts,
+		Source:     "whoop",
+		Dedupe:     true,
+	})
+	if err != nil {
+		t.Fatalf("Second upsert: %v", err)
+	}
+	if !out2.Updated {
+		t.Error("Second upsert should be Updated=true")
+	}
+	if !contains(out2.Message, "Updated") {
+		t.Errorf("Message %q should start with Updated", out2.Message)
+	}
+
+	// Only one row should exist in the repo.
+	metrics, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 metric after dedupe, got %d", len(metrics))
+	}
+}
+
+func TestHandleListMetricsWithSourceFilter(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	// Add a whoop metric and a manual metric.
+	mWhoop := models.NewMetric(models.MetricHRV, 55)
+	mWhoop.WithSource("whoop")
+	if err := db.CreateMetric(mWhoop); err != nil {
+		t.Fatalf("CreateMetric whoop: %v", err)
+	}
+
+	mManual := models.NewMetric(models.MetricHRV, 48)
+	// Source defaults to "manual".
+	if err := db.CreateMetric(mManual); err != nil {
+		t.Fatalf("CreateMetric manual: %v", err)
+	}
+
+	_, output, err := server.handleListMetrics(ctx, &mcp.CallToolRequest{}, listMetricsInput{
+		Source: "whoop",
+	})
+	if err != nil {
+		t.Fatalf("handleListMetrics: %v", err)
+	}
+
+	metrics, ok := output.([]*models.Metric)
+	if !ok {
+		t.Fatalf("Expected []*models.Metric, got %T", output)
+	}
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 whoop metric, got %d", len(metrics))
+	}
+	if metrics[0].Source != "whoop" {
+		t.Errorf("Source = %q, want %q", metrics[0].Source, "whoop")
+	}
+}
+
+func TestHandleGetLatestContainsSource(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	m := models.NewMetric(models.MetricWeight, 82.5)
+	m.WithSource("withings")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric withings: %v", err)
+	}
+
+	_, output, err := server.handleGetLatest(ctx, &mcp.CallToolRequest{}, getLatestInput{
+		MetricTypes: []string{"weight"},
+	})
+	if err != nil {
+		t.Fatalf("handleGetLatest: %v", err)
+	}
+
+	results, ok := output.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected map output, got %T", output)
+	}
+	entry, ok := results["weight"]
+	if !ok {
+		t.Fatal("Expected weight entry in results")
+	}
+	entryMap, ok := entry.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected map for weight entry, got %T", entry)
+	}
+	if _, ok := entryMap["source"]; !ok {
+		t.Error("Expected 'source' key in get_latest result entry")
+	}
+	if entryMap["source"] != "withings" {
+		t.Errorf("source = %q, want %q", entryMap["source"], "withings")
+	}
+}
+
+func TestHandleSummaryResourceContainsSource(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	m := models.NewMetric(models.MetricWeight, 82.5)
+	m.WithSource("withings")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric withings: %v", err)
+	}
+
+	result, err := server.handleSummaryResource(ctx, &mcp.ReadResourceRequest{})
+	if err != nil {
+		t.Fatalf("handleSummaryResource: %v", err)
+	}
+
+	if !contains(result.Contents[0].Text, `"source"`) {
+		t.Error("Expected 'source' field in summary resource output")
+	}
+}
+
+func TestHandleSummaryResourceNewTypes(t *testing.T) {
+	db := setupTestDB(t)
+	server, _ := NewServer(db)
+	ctx := context.Background()
+
+	// Store spo2 (biometrics) and strain (activity).
+	db.CreateMetric(models.NewMetric(models.MetricSpO2, 98))
+	db.CreateMetric(models.NewMetric(models.MetricStrain, 14.5))
+
+	result, err := server.handleSummaryResource(ctx, &mcp.ReadResourceRequest{})
+	if err != nil {
+		t.Fatalf("handleSummaryResource: %v", err)
+	}
+
+	// Unmarshal into a generic map and walk the exact JSON path the handler emits:
+	// top-level "metrics" → "biometrics" → "spo2"
+	// top-level "metrics" → "activity"   → "strain"
+	var body map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Contents[0].Text), &body); err != nil {
+		t.Fatalf("failed to unmarshal summary JSON: %v", err)
+	}
+
+	metricsRaw, ok := body["metrics"]
+	if !ok {
+		t.Fatal("summary JSON missing top-level \"metrics\" key")
+	}
+	metrics, ok := metricsRaw.(map[string]interface{})
+	if !ok {
+		t.Fatal("\"metrics\" is not a JSON object")
+	}
+
+	// Assert spo2 is under metrics.biometrics, not somewhere else.
+	biometricsRaw, ok := metrics["biometrics"]
+	if !ok {
+		t.Fatal("summary JSON missing \"metrics.biometrics\" key")
+	}
+	biometrics, ok := biometricsRaw.(map[string]interface{})
+	if !ok {
+		t.Fatal("\"metrics.biometrics\" is not a JSON object")
+	}
+	if _, ok := biometrics["spo2"]; !ok {
+		t.Error("expected spo2 under metrics.biometrics, but it was not present there")
+	}
+
+	// Assert strain is under metrics.activity, not somewhere else.
+	activityRaw, ok := metrics["activity"]
+	if !ok {
+		t.Fatal("summary JSON missing \"metrics.activity\" key")
+	}
+	activity, ok := activityRaw.(map[string]interface{})
+	if !ok {
+		t.Fatal("\"metrics.activity\" is not a JSON object")
+	}
+	if _, ok := activity["strain"]; !ok {
+		t.Error("expected strain under metrics.activity, but it was not present there")
+	}
+
+	// Confirm neither metric leaked into the wrong category.
+	if _, ok := biometrics["strain"]; ok {
+		t.Error("strain must not appear under metrics.biometrics")
+	}
+	if _, ok := activity["spo2"]; ok {
+		t.Error("spo2 must not appear under metrics.activity")
 	}
 }
 

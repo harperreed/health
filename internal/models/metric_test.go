@@ -3,6 +3,7 @@
 package models
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -216,7 +217,7 @@ func TestNewMetricSetsCreatedAt(t *testing.T) {
 }
 
 func TestAllMetricTypesSlice(t *testing.T) {
-	expectedCount := 21 // Total number of metric types
+	expectedCount := 25 // Total number of metric types
 
 	if len(AllMetricTypes) != expectedCount {
 		t.Errorf("AllMetricTypes has %d types, want %d", len(AllMetricTypes), expectedCount)
@@ -244,5 +245,69 @@ func TestMetricChaining(t *testing.T) {
 	}
 	if m.Notes == nil || *m.Notes != "chained call" {
 		t.Error("Notes should be 'chained call'")
+	}
+}
+
+func TestNewMetricDefaultsToManualSource(t *testing.T) {
+	m := NewMetric(MetricWeight, 82.5)
+	if m.Source != SourceManual {
+		t.Errorf("Source = %q, want %q", m.Source, SourceManual)
+	}
+}
+
+func TestWithSource(t *testing.T) {
+	m := NewMetric(MetricHRV, 48).WithSource("whoop")
+	if m.Source != "whoop" {
+		t.Errorf("Source = %q, want whoop", m.Source)
+	}
+
+	// Verify WithSource normalizes: trims spaces and lowercases.
+	m2 := NewMetric(MetricHRV, 48).WithSource("  Whoop  ")
+	if m2.Source != "whoop" {
+		t.Errorf("Source = %q, want %q (normalization not applied)", m2.Source, "whoop")
+	}
+}
+
+func TestNormalizeSource(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", "manual"},
+		{"  ", "manual"},
+		{"Whoop", "whoop"},
+		{" EMFIT ", "emfit"},
+		{"withings", "withings"},
+		{"my-custom-device", "my-custom-device"},
+	}
+	for _, c := range cases {
+		if got := NormalizeSource(c.in); got != c.want {
+			t.Errorf("NormalizeSource(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestValidMetricTypesList(t *testing.T) {
+	list := ValidMetricTypesList()
+	if !strings.Contains(list, "weight") || !strings.Contains(list, "meditation") {
+		t.Errorf("ValidMetricTypesList missing types: %s", list)
+	}
+}
+
+func TestNewMetricTypesAreValid(t *testing.T) {
+	cases := []struct {
+		name string
+		unit string
+	}{
+		{"recovery", "%"},
+		{"strain", "score"},
+		{"respiratory_rate", "brpm"},
+		{"spo2", "%"},
+	}
+	for _, c := range cases {
+		if !IsValidMetricType(c.name) {
+			t.Errorf("IsValidMetricType(%q) = false, want true", c.name)
+		}
+		m := NewMetric(MetricType(c.name), 50)
+		if m.Unit != c.unit {
+			t.Errorf("unit for %s = %q, want %q", c.name, m.Unit, c.unit)
+		}
 	}
 }

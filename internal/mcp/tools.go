@@ -15,13 +15,13 @@ func (s *Server) registerTools() {
 	// add_metric
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "add_metric",
-		Description: "Record a health metric (weight, hrv, mood, etc.)",
+		Description: "Record a health metric (weight, hrv, mood, etc.). Optional source (whoop|withings|emfit|manual|custom) and dedupe (replace same source+type+timestamp).",
 	}, s.handleAddMetric)
 
 	// list_metrics
 	mcp.AddTool(s.mcpServer, &mcp.Tool{
 		Name:        "list_metrics",
-		Description: "List recent health metrics, optionally filtered by type",
+		Description: "List recent health metrics, optionally filtered by type and/or source",
 	}, s.handleListMetrics)
 
 	// delete_metric
@@ -74,6 +74,8 @@ type addMetricInput struct {
 	Value      float64 `json:"value"`
 	RecordedAt string  `json:"recorded_at,omitempty"`
 	Notes      string  `json:"notes,omitempty"`
+	Source     string  `json:"source,omitempty"`
+	Dedupe     bool    `json:"dedupe,omitempty"`
 }
 
 type metricOutput struct {
@@ -81,11 +83,14 @@ type metricOutput struct {
 	MetricType string  `json:"metric_type"`
 	Value      float64 `json:"value"`
 	Unit       string  `json:"unit"`
+	Source     string  `json:"source"`
+	Updated    bool    `json:"updated"`
 	Message    string  `json:"message"`
 }
 
 type listMetricsInput struct {
 	MetricType string `json:"metric_type,omitempty"`
+	Source     string `json:"source,omitempty"`
 	Limit      int    `json:"limit,omitempty"`
 }
 
@@ -152,16 +157,33 @@ func (s *Server) handleAddMetric(ctx context.Context, req *mcp.CallToolRequest, 
 		m.WithNotes(input.Notes)
 	}
 
-	if err := s.repo.CreateMetric(m); err != nil {
+	if input.Source != "" {
+		m.WithSource(input.Source)
+	}
+
+	var updated bool
+	if input.Dedupe {
+		var err error
+		updated, err = s.repo.UpsertMetric(m)
+		if err != nil {
+			return nil, metricOutput{}, fmt.Errorf("failed to upsert metric: %w", err)
+		}
+	} else if err := s.repo.CreateMetric(m); err != nil {
 		return nil, metricOutput{}, fmt.Errorf("failed to create metric: %w", err)
 	}
 
+	verb := "Added"
+	if updated {
+		verb = "Updated"
+	}
 	return nil, metricOutput{
 		ID:         m.ID.String()[:8],
 		MetricType: input.MetricType,
 		Value:      m.Value,
 		Unit:       m.Unit,
-		Message:    fmt.Sprintf("Added %s: %.2f %s (ID: %s)", input.MetricType, m.Value, m.Unit, m.ID.String()[:8]),
+		Source:     m.Source,
+		Updated:    updated,
+		Message:    fmt.Sprintf("%s %s: %.2f %s [%s] (ID: %s)", verb, input.MetricType, m.Value, m.Unit, m.Source, m.ID.String()[:8]),
 	}, nil
 }
 
@@ -176,7 +198,13 @@ func (s *Server) handleListMetrics(ctx context.Context, req *mcp.CallToolRequest
 		metricType = &mt
 	}
 
-	metrics, err := s.repo.ListMetrics(metricType, input.Limit)
+	var source *string
+	if input.Source != "" {
+		normalized := models.NormalizeSource(input.Source)
+		source = &normalized
+	}
+
+	metrics, err := s.repo.ListMetrics(metricType, source, input.Limit)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list metrics: %w", err)
 	}
@@ -287,12 +315,13 @@ func (s *Server) handleGetLatest(ctx context.Context, req *mcp.CallToolRequest, 
 	results := make(map[string]interface{})
 	for _, t := range types {
 		mt := models.MetricType(t)
-		metrics, err := s.repo.ListMetrics(&mt, 1)
+		metrics, err := s.repo.ListMetrics(&mt, nil, 1)
 		if err == nil && len(metrics) > 0 {
 			results[t] = map[string]interface{}{
 				"value":       metrics[0].Value,
 				"unit":        metrics[0].Unit,
 				"recorded_at": metrics[0].RecordedAt,
+				"source":      metrics[0].Source,
 			}
 		}
 	}

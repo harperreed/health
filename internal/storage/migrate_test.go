@@ -70,7 +70,7 @@ func TestMigrateDataSQLiteToMarkdown(t *testing.T) {
 	}
 
 	// Verify data in destination
-	metrics, err := dstStore.ListMetrics(nil, 0)
+	metrics, err := dstStore.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics from dst failed: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestMigrateDataMarkdownToSQLite(t *testing.T) {
 	}
 
 	// Verify data in destination
-	metrics, err := dstDB.ListMetrics(nil, 0)
+	metrics, err := dstDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics from dst failed: %v", err)
 	}

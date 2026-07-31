@@ -99,7 +99,7 @@ func TestMarkdownStoreListMetrics(t *testing.T) {
 	}
 
 	// List all metrics (should be ordered by RecordedAt DESC)
-	all, err := store.ListMetrics(nil, 0)
+	all, err := store.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestMarkdownStoreListMetrics(t *testing.T) {
 
 	// Filter by type
 	weightType := models.MetricWeight
-	weights, err := store.ListMetrics(&weightType, 0)
+	weights, err := store.ListMetrics(&weightType, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics with type failed: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestMarkdownStoreListMetrics(t *testing.T) {
 	}
 
 	// Test limit
-	limited, err := store.ListMetrics(nil, 2)
+	limited, err := store.ListMetrics(nil, nil, 2)
 	if err != nil {
 		t.Fatalf("ListMetrics with limit failed: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestMarkdownStoreGetWorkoutMetricNotFound(t *testing.T) {
 func TestMarkdownStoreListMetricsEmpty(t *testing.T) {
 	store := setupTestMarkdownStore(t)
 
-	metrics, err := store.ListMetrics(nil, 0)
+	metrics, err := store.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -649,7 +649,7 @@ func TestMarkdownStoreImportData(t *testing.T) {
 	}
 
 	// Verify
-	metrics, err := store.ListMetrics(nil, 0)
+	metrics, err := store.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -868,4 +868,268 @@ func TestMarkdownStoreImplementsRepository(t *testing.T) {
 	// Assign to interface to confirm the concrete type satisfies Repository
 	var r Repository = store
 	_ = r
+}
+
+func TestMarkdownUpsertMetricInsertsWhenNew(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	updated, err := s.UpsertMetric(m)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if updated {
+		t.Errorf("updated = true, want false for new row")
+	}
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("count = %d, want 1", len(all))
+	}
+}
+
+func TestMarkdownUpsertMetricReplacesSameKey(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	m1 := models.NewMetric(models.MetricHRV, 48).WithSource("whoop").WithRecordedAt(at)
+	if _, err := s.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+
+	m2 := models.NewMetric(models.MetricHRV, 52).WithSource("whoop").WithRecordedAt(at)
+	m2.WithNotes("resynced")
+	updated, err := s.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if m2.ID != m1.ID {
+		t.Errorf("upsert should keep original ID: got %s, want %s", m2.ID, m1.ID)
+	}
+
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("count = %d, want 1 (no duplicate)", len(all))
+	}
+	if all[0].Value != 52 {
+		t.Errorf("Value = %v, want 52", all[0].Value)
+	}
+	if all[0].Notes == nil || *all[0].Notes != "resynced" {
+		t.Errorf("Notes not updated: %v", all[0].Notes)
+	}
+}
+
+func TestMarkdownUpsertMetricDistinguishesSources(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	m1 := models.NewMetric(models.MetricSleepHours, 7.2).WithSource("whoop").WithRecordedAt(at)
+	m2 := models.NewMetric(models.MetricSleepHours, 7.8).WithSource("emfit").WithRecordedAt(at)
+	if _, err := s.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	updated, err := s.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if updated {
+		t.Errorf("different source must not update")
+	}
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("count = %d, want 2", len(all))
+	}
+}
+
+func TestMarkdownUpsertMetricMatchesInstantAcrossZones(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	utc := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	chicago := utc.In(time.FixedZone("CDT", -5*3600))
+
+	m1 := models.NewMetric(models.MetricHeartRate, 55).WithSource("whoop").WithRecordedAt(utc)
+	if _, err := s.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	m2 := models.NewMetric(models.MetricHeartRate, 56).WithSource("whoop").WithRecordedAt(chicago)
+	updated, err := s.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("same instant in different zone must match")
+	}
+}
+
+func TestMarkdownListMetricsFilterBySource(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	for _, src := range []string{"whoop", "emfit", "whoop"} {
+		m := models.NewMetric(models.MetricSleepHours, 7.5).WithSource(src)
+		if err := s.CreateMetric(m); err != nil {
+			t.Fatalf("CreateMetric: %v", err)
+		}
+	}
+
+	src := "whoop"
+	got, err := s.ListMetrics(nil, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("whoop count = %d, want 2", len(got))
+	}
+
+	// Combined type+source filter
+	mt := models.MetricSleepHours
+	got, err = s.ListMetrics(&mt, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("combined filter count = %d, want 2", len(got))
+	}
+
+	// Filter normalizes case
+	src2 := "Emfit"
+	got, err = s.ListMetrics(nil, &src2, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("emfit count = %d, want 1", len(got))
+	}
+}
+
+func TestMarkdownMetricSourceRoundTrip(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := s.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric: %v", err)
+	}
+	got, err := s.GetMetric(m.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric: %v", err)
+	}
+	if got.Source != "whoop" {
+		t.Errorf("Source = %q, want whoop", got.Source)
+	}
+}
+
+func TestMarkdownUpsertMetricUpdatesOldestLegacyDuplicate(t *testing.T) {
+	s, err := NewMarkdownStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	olderCreatedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newerCreatedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// Seed two metrics sharing the same dedup key with distinct CreatedAt values.
+	// CreateMetric honors the pre-set CreatedAt field.
+	older := models.NewMetric(models.MetricHRV, 40).WithSource("whoop").WithRecordedAt(at)
+	older.CreatedAt = olderCreatedAt
+	if err := s.CreateMetric(older); err != nil {
+		t.Fatalf("CreateMetric older: %v", err)
+	}
+
+	newer := models.NewMetric(models.MetricHRV, 41).WithSource("whoop").WithRecordedAt(at)
+	newer.CreatedAt = newerCreatedAt
+	if err := s.CreateMetric(newer); err != nil {
+		t.Fatalf("CreateMetric newer: %v", err)
+	}
+
+	upsert := models.NewMetric(models.MetricHRV, 99).WithSource("whoop").WithRecordedAt(at)
+	updated, err := s.UpsertMetric(upsert)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if upsert.ID != older.ID {
+		t.Errorf("caller struct ID = %s, want oldest ID %s", upsert.ID, older.ID)
+	}
+
+	// Total count must stay at 2.
+	all, err := s.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("count = %d, want 2 (both duplicates still present)", len(all))
+	}
+
+	// Oldest row now has the new value.
+	gotOlder, err := s.GetMetric(older.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric older: %v", err)
+	}
+	if gotOlder.Value != 99 {
+		t.Errorf("older.Value = %v, want 99", gotOlder.Value)
+	}
+
+	// Newer duplicate is untouched.
+	gotNewer, err := s.GetMetric(newer.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric newer: %v", err)
+	}
+	if gotNewer.Value != 41 {
+		t.Errorf("newer.Value = %v, want 41 (untouched)", gotNewer.Value)
+	}
+}
+
+func TestMarkdownLegacyFileReadsManualSource(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewMarkdownStore(dir)
+	if err != nil {
+		t.Fatalf("NewMarkdownStore: %v", err)
+	}
+	// Hand-write a legacy metric file with no source key.
+	id := uuid.New()
+	path := filepath.Join(dir, "metrics", "2025", "01", "2025-01-15-weight-"+id.String()[:8]+".md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "---\nid: " + id.String() + "\nmetric_type: weight\nvalue: 80\nunit: kg\nrecorded_at: 2025-01-15T07:00:00Z\ncreated_at: 2025-01-15T07:00:00Z\n---\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+	got, err := s.GetMetric(id.String())
+	if err != nil {
+		t.Fatalf("GetMetric: %v", err)
+	}
+	if got.Source != models.SourceManual {
+		t.Errorf("legacy Source = %q, want manual", got.Source)
+	}
 }

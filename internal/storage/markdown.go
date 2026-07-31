@@ -75,6 +75,7 @@ type metricFrontmatter struct {
 	MetricType string  `yaml:"metric_type"`
 	Value      float64 `yaml:"value"`
 	Unit       string  `yaml:"unit"`
+	Source     string  `yaml:"source,omitempty"`
 	RecordedAt string  `yaml:"recorded_at"`
 	CreatedAt  string  `yaml:"created_at"`
 }
@@ -118,6 +119,7 @@ func metricFromFrontmatter(fm *metricFrontmatter, notes string) (*models.Metric,
 		MetricType: models.MetricType(fm.MetricType),
 		Value:      fm.Value,
 		Unit:       fm.Unit,
+		Source:     models.NormalizeSource(fm.Source),
 		RecordedAt: recordedAt,
 		CreatedAt:  createdAt,
 	}
@@ -134,6 +136,7 @@ func metricToFrontmatter(m *models.Metric) metricFrontmatter {
 		MetricType: string(m.MetricType),
 		Value:      m.Value,
 		Unit:       m.Unit,
+		Source:     models.NormalizeSource(m.Source),
 		RecordedAt: mdstore.FormatTime(m.RecordedAt.UTC()),
 		CreatedAt:  mdstore.FormatTime(m.CreatedAt.UTC()),
 	}
@@ -238,22 +241,23 @@ func readMetricFile(path string) (*models.Metric, error) {
 	return metricFromFrontmatter(&fm, notes)
 }
 
-// writeMetricFile writes a metric to a markdown file.
-func (s *MarkdownStore) writeMetricFile(m *models.Metric) error {
+// writeMetricFileAt renders and writes a metric to an explicit path.
+func (s *MarkdownStore) writeMetricFileAt(path string, m *models.Metric) error {
 	fm := metricToFrontmatter(m)
-	path := s.metricFilePath(m.RecordedAt, m.MetricType, m.ID)
-
 	body := ""
 	if m.Notes != nil && *m.Notes != "" {
 		body = "\n" + *m.Notes + "\n"
 	}
-
 	content, err := mdstore.RenderFrontmatter(&fm, body)
 	if err != nil {
 		return fmt.Errorf("render metric file: %w", err)
 	}
-
 	return mdstore.AtomicWrite(path, []byte(content))
+}
+
+// writeMetricFile writes a metric to a markdown file.
+func (s *MarkdownStore) writeMetricFile(m *models.Metric) error {
+	return s.writeMetricFileAt(s.metricFilePath(m.RecordedAt, m.MetricType, m.ID), m)
 }
 
 // readWorkoutFile reads a workout from a markdown file.
@@ -447,7 +451,54 @@ func (s *MarkdownStore) findWorkoutFile(idOrPrefix string) (string, *models.Work
 
 // CreateMetric stores a new metric as a markdown file.
 func (s *MarkdownStore) CreateMetric(m *models.Metric) error {
+	m.Source = models.NormalizeSource(m.Source)
 	return s.writeMetricFile(m)
+}
+
+// UpsertMetric inserts or replaces a metric keyed on (source, metric_type, recorded_at).
+// The existing file is rewritten in place so its path and identity are stable.
+func (s *MarkdownStore) UpsertMetric(m *models.Metric) (bool, error) {
+	m.Source = models.NormalizeSource(m.Source)
+
+	type match struct {
+		path   string
+		metric *models.Metric
+	}
+	var matches []match
+	err := s.walkMetricFiles(func(path string, existing *models.Metric) error {
+		if existing.MetricType == m.MetricType &&
+			models.NormalizeSource(existing.Source) == m.Source &&
+			existing.RecordedAt.Equal(m.RecordedAt) {
+			matches = append(matches, match{path: path, metric: existing})
+		}
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("upsert metric: %w", err)
+	}
+	if len(matches) == 0 {
+		return false, s.CreateMetric(m)
+	}
+
+	// Deterministic pick when legacy duplicates share the key.
+	sort.Slice(matches, func(i, j int) bool {
+		a, b := matches[i].metric, matches[j].metric
+		if !a.CreatedAt.Equal(b.CreatedAt) {
+			return a.CreatedAt.Before(b.CreatedAt)
+		}
+		return a.ID.String() < b.ID.String()
+	})
+	target := matches[0]
+	target.metric.Value = m.Value
+	target.metric.Unit = m.Unit
+	target.metric.Notes = m.Notes
+
+	if err := s.writeMetricFileAt(target.path, target.metric); err != nil {
+		return false, err
+	}
+	m.ID = target.metric.ID
+	m.CreatedAt = target.metric.CreatedAt
+	return true, nil
 }
 
 // GetMetric retrieves a metric by ID or ID prefix.
@@ -456,13 +507,16 @@ func (s *MarkdownStore) GetMetric(idOrPrefix string) (*models.Metric, error) {
 	return m, err
 }
 
-// ListMetrics retrieves metrics with optional filtering by type.
+// ListMetrics retrieves metrics with optional filtering by type and source.
 // Results are sorted by RecordedAt descending (most recent first).
-func (s *MarkdownStore) ListMetrics(metricType *models.MetricType, limit int) ([]*models.Metric, error) {
+func (s *MarkdownStore) ListMetrics(metricType *models.MetricType, source *string, limit int) ([]*models.Metric, error) {
 	var metrics []*models.Metric
 
 	err := s.walkMetricFiles(func(path string, m *models.Metric) error {
 		if metricType != nil && m.MetricType != *metricType {
+			return nil
+		}
+		if source != nil && models.NormalizeSource(m.Source) != models.NormalizeSource(*source) {
 			return nil
 		}
 		metrics = append(metrics, m)
@@ -500,7 +554,7 @@ func (s *MarkdownStore) DeleteMetric(idOrPrefix string) error {
 // GetLatestMetric returns the most recent metric of a specific type.
 func (s *MarkdownStore) GetLatestMetric(metricType models.MetricType) (*models.Metric, error) {
 	mt := metricType
-	metrics, err := s.ListMetrics(&mt, 1)
+	metrics, err := s.ListMetrics(&mt, nil, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +705,7 @@ func (s *MarkdownStore) ListWorkoutMetrics(workoutID uuid.UUID) ([]*models.Worko
 		return nil, fmt.Errorf("list workout metrics: %w", err)
 	}
 
-	var metrics []*models.WorkoutMetric
+	metrics := make([]*models.WorkoutMetric, 0, len(w.Metrics))
 	for i := range w.Metrics {
 		metrics = append(metrics, &w.Metrics[i])
 	}
@@ -731,7 +785,7 @@ func (s *MarkdownStore) DeleteWorkoutMetric(idOrPrefix string) error {
 
 // GetAllData retrieves all data for export.
 func (s *MarkdownStore) GetAllData() (*ExportData, error) {
-	metrics, err := s.ListMetrics(nil, 0)
+	metrics, err := s.ListMetrics(nil, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list metrics: %w", err)
 	}

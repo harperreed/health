@@ -21,8 +21,8 @@ var rootCmd = &cobra.Command{
 
 WHAT IT TRACKS:
 
-  Biometrics     weight, body_fat, bp (blood pressure), heart_rate, hrv, temperature
-  Activity       steps, sleep_hours, active_calories
+  Biometrics     weight, body_fat, bp (blood pressure), heart_rate, hrv, temperature, respiratory_rate, spo2
+  Activity       steps, sleep_hours, active_calories, recovery, strain
   Nutrition      water, calories, protein, carbs, fat
   Mental Health  mood, energy, stress, anxiety, focus, meditation
 
@@ -46,6 +46,14 @@ DATA EXPORT:
   $ health export yaml                  # Export to YAML
   $ health export markdown              # Export to Markdown
   $ health import backup.json           # Import from JSON
+
+NATIVE PROVIDER SYNC:
+
+  $ health sync auth whoop              # Authorize Whoop (one-time OAuth flow)
+  $ health sync auth withings           # Authorize Withings
+  $ health sync whoop                   # Sync last 7 days from Whoop
+  $ health sync withings --days 30      # Sync 30 days from Withings
+  $ health sync emfit                   # Sync latest Emfit sleep night
 
 MCP INTEGRATION:
 

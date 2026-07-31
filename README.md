@@ -4,7 +4,9 @@ A fast, privacy-focused CLI for tracking personal health metrics with cloud sync
 
 ## Features
 
-- **22 metric types** across biometrics, activity, nutrition, and mental health
+- **25 metric types** across biometrics, activity, nutrition, and mental health
+- **Source tagging** to track where data comes from (whoop, withings, emfit, manual, or custom)
+- **Idempotent upsert** (`--dedupe`) for safe repeated imports from wearables
 - **Workout tracking** with custom sub-metrics (distance, pace, heart rate, etc.)
 - **End-to-end encrypted sync** across devices via Charm Cloud
 - **MCP server** for AI assistant integration (Claude Desktop, etc.)
@@ -67,6 +69,8 @@ health add bp <systolic> <diastolic>  # Blood pressure (special case)
 **Flags:**
 - `--at <timestamp>` - Backdate entry (e.g., `"2024-12-14 07:00"`, `"2024-12-14"`)
 - `--notes <string>` - Add notes
+- `--source/-s <string>` - Tag the data source: `whoop`, `withings`, `emfit`, `manual`, or any free-form string (default: `manual`)
+- `--dedupe` - Upsert: update an existing entry with the same source, type, and timestamp instead of creating a duplicate
 
 **Examples:**
 ```bash
@@ -74,6 +78,11 @@ health add weight 82.5
 health add hrv 48 --at "2024-12-14 07:00"
 health add mood 7 --notes "Morning check-in"
 health add sleep_hours 7.5
+health add hrv 48 --source whoop --dedupe    # Idempotent sync write
+health add recovery 85 --source whoop        # Recovery score from Whoop
+health add strain 14.2 --source whoop        # Strain score from Whoop
+health add spo2 98 --source whoop            # Blood oxygen from Whoop
+health add respiratory_rate 16 --source whoop  # Breathing rate from Whoop
 ```
 
 ### `health list` - View Metrics
@@ -85,12 +94,15 @@ health list [flags]
 **Flags:**
 - `-t, --type <type>` - Filter by metric type
 - `-n, --limit <int>` - Max results (default: 20)
+- `-s, --source <string>` - Filter by data source (e.g., `whoop`, `manual`)
 
 **Examples:**
 ```bash
 health list
 health list --type weight -n 30
 health ls -t mood
+health list --source whoop       # Only Whoop-sourced entries
+health list -s manual -t hrv     # Manual HRV entries only
 ```
 
 ### `health delete` - Remove Metrics
@@ -118,14 +130,112 @@ health workout show <id>
 health workout delete <id>
 ```
 
-### `health sync` - Cloud Synchronization
+### `health sync` - Native Provider Sync
+
+Pull health data from Whoop, Withings, and Emfit directly into local storage.
 
 ```bash
-health sync link      # Connect to Charm Cloud
-health sync status    # Check sync status
-health sync unlink    # Disconnect
-health sync wipe      # Reset local data from cloud
+health sync whoop               # Sync last 7 days from Whoop
+health sync withings --days 30  # Sync last 30 days from Withings
+health sync emfit               # Sync latest Emfit sleep night
 ```
+
+Sync commands are the **only** commands that touch the network; everything else is offline.
+
+#### Whoop setup
+
+1. Create an app at https://developer.whoop.com and get a client ID and secret.
+2. Add to `~/.config/health/config.json`:
+   ```json
+   {
+     "sync": {
+       "whoop": {
+         "client_id": "YOUR_CLIENT_ID",
+         "client_secret": "YOUR_CLIENT_SECRET"
+       }
+     }
+   }
+   ```
+3. Authorize (one-time):
+   ```bash
+   health sync auth whoop
+   ```
+   The command prints the authorize URL — open it in your browser. After approval, the token
+   is saved automatically. Required scopes: `read:recovery read:sleep read:cycles offline`
+   (`offline` is required for a refresh token).
+
+4. Sync:
+   ```bash
+   health sync whoop
+   health sync whoop --days 30
+   ```
+
+#### Withings setup
+
+1. Create an app at https://developer.withings.com and get a client ID and secret.
+2. Add to `~/.config/health/config.json`:
+   ```json
+   {
+     "sync": {
+       "withings": {
+         "client_id": "YOUR_CLIENT_ID",
+         "client_secret": "YOUR_CLIENT_SECRET"
+       }
+     }
+   }
+   ```
+3. Authorize (one-time):
+   ```bash
+   health sync auth withings
+   ```
+4. Sync:
+   ```bash
+   health sync withings
+   ```
+
+   Scopes granted: `user.info,user.metrics,user.activity`.
+
+#### Emfit QS setup
+
+Emfit does not use OAuth. Supply either a pre-configured token or your username/password.
+
+```json
+{
+  "sync": {
+    "emfit": {
+      "device_id": "YOUR_DEVICE_ID",
+      "token": "YOUR_STATIC_TOKEN"
+    }
+  }
+}
+```
+
+Or with login credentials (token obtained automatically each sync):
+
+```json
+{
+  "sync": {
+    "emfit": {
+      "device_id": "YOUR_DEVICE_ID",
+      "username": "you@example.com",
+      "password": "yourpassword"
+    }
+  }
+}
+```
+
+Then:
+
+```bash
+health sync emfit
+```
+
+#### Credential storage
+
+- **Config file:** `~/.config/health/config.json` — holds client IDs, secrets, and Emfit credentials.
+- **OAuth tokens:** `~/.local/share/health/tokens/<provider>.json` — written 0600, updated automatically on each token refresh.
+- Whoop and Withings refresh tokens rotate on every use and are persisted immediately.
+- The `--days` default is 7. Pass `--days N` to widen the window.
 
 ## Supported Metrics
 
@@ -138,6 +248,8 @@ health sync wipe      # Reset local data from cloud
 | `heart_rate` | bpm | Resting heart rate |
 | `hrv` | ms | Heart rate variability |
 | `temperature` | °C | Body temperature |
+| `respiratory_rate` | brpm | Breathing rate |
+| `spo2` | % | Blood oxygen saturation |
 
 ### Activity
 | Type | Unit | Description |
@@ -145,6 +257,8 @@ health sync wipe      # Reset local data from cloud
 | `steps` | steps | Daily step count |
 | `sleep_hours` | hours | Sleep duration |
 | `active_calories` | kcal | Calories burned |
+| `recovery` | % | Recovery score (0–100) |
+| `strain` | score | Strain score (0–21) |
 
 ### Nutrition
 | Type | Unit | Description |
@@ -186,21 +300,21 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Available Tools
 
-- `add_metric` - Record a health metric
-- `list_metrics` - List recent metrics
+- `add_metric` - Record a health metric. Accepts `source` (string, default `manual`) and `dedupe` (bool) to upsert instead of insert.
+- `list_metrics` - List recent metrics. Accepts `source` to filter by data source. Output includes a `Source` field on every metric.
 - `delete_metric` - Delete a metric
 - `add_workout` - Create workout session
 - `add_workout_metric` - Add metric to workout
 - `list_workouts` - List workouts
 - `get_workout` - Get workout details
 - `delete_workout` - Delete a workout
-- `get_latest` - Get most recent value for metric types
+- `get_latest` - Get most recent value for metric types. Output includes `Source` on each returned metric.
 
 ### Available Resources
 
-- `health://recent` - Last 10 metrics + 5 workouts
+- `health://recent` - Last 10 metrics + 5 workouts (each metric includes `Source`)
 - `health://today` - Today's entries
-- `health://summary` - Latest value per metric type
+- `health://summary` - Latest value per metric type (includes `Source` on each entry)
 
 ## Data Storage
 

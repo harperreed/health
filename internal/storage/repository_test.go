@@ -3,6 +3,7 @@
 package storage
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,7 +85,7 @@ func TestListMetrics(t *testing.T) {
 	}
 
 	// List all metrics (should be ordered by RecordedAt DESC)
-	all, err := db.ListMetrics(nil, 0)
+	all, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestListMetrics(t *testing.T) {
 
 	// Filter by type
 	weightType := models.MetricWeight
-	weights, err := db.ListMetrics(&weightType, 0)
+	weights, err := db.ListMetrics(&weightType, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics with type failed: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestListMetrics(t *testing.T) {
 	}
 
 	// Test limit
-	limited, err := db.ListMetrics(nil, 2)
+	limited, err := db.ListMetrics(nil, nil, 2)
 	if err != nil {
 		t.Fatalf("ListMetrics with limit failed: %v", err)
 	}
@@ -482,7 +483,7 @@ func TestImportData(t *testing.T) {
 	}
 
 	// Verify
-	metrics, err := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -780,7 +781,7 @@ func TestListMetricsNoResults(t *testing.T) {
 	defer db.Close()
 
 	// List metrics when none exist
-	metrics, err := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -952,7 +953,7 @@ func TestListMetricsWithTypeAndLimit(t *testing.T) {
 
 	// Filter by type with limit
 	weightType := models.MetricWeight
-	metrics, err := db.ListMetrics(&weightType, 2)
+	metrics, err := db.ListMetrics(&weightType, nil, 2)
 	if err != nil {
 		t.Fatalf("ListMetrics with type and limit failed: %v", err)
 	}
@@ -1062,5 +1063,343 @@ func TestWorkoutMetricWithAllFields(t *testing.T) {
 	}
 	if got.Unit == nil || *got.Unit != "min/km" {
 		t.Error("Expected Unit to be 'min/km'")
+	}
+}
+
+func TestUpsertMetricInsertsWhenNew(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	updated, err := db.UpsertMetric(m)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if updated {
+		t.Errorf("updated = true, want false for new row")
+	}
+	all, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("count = %d, want 1", len(all))
+	}
+}
+
+func TestUpsertMetricReplacesSameKey(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	m1 := models.NewMetric(models.MetricHRV, 48).WithSource("whoop").WithRecordedAt(at)
+	if _, err := db.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+
+	m2 := models.NewMetric(models.MetricHRV, 52).WithSource("whoop").WithRecordedAt(at)
+	m2.WithNotes("resynced")
+	updated, err := db.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if m2.ID != m1.ID {
+		t.Errorf("upsert should keep original ID: got %s, want %s", m2.ID, m1.ID)
+	}
+
+	all, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("count = %d, want 1 (no duplicate)", len(all))
+	}
+	if all[0].Value != 52 {
+		t.Errorf("Value = %v, want 52", all[0].Value)
+	}
+	if all[0].Notes == nil || *all[0].Notes != "resynced" {
+		t.Errorf("Notes not updated: %v", all[0].Notes)
+	}
+}
+
+func TestUpsertMetricDistinguishesSources(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	m1 := models.NewMetric(models.MetricSleepHours, 7.2).WithSource("whoop").WithRecordedAt(at)
+	m2 := models.NewMetric(models.MetricSleepHours, 7.8).WithSource("emfit").WithRecordedAt(at)
+	if _, err := db.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	updated, err := db.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if updated {
+		t.Errorf("different source must not update")
+	}
+	all, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Errorf("count = %d, want 2", len(all))
+	}
+}
+
+func TestUpsertMetricMatchesInstantAcrossZones(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	utc := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
+	chicago := utc.In(time.FixedZone("CDT", -5*3600))
+
+	m1 := models.NewMetric(models.MetricHeartRate, 55).WithSource("whoop").WithRecordedAt(utc)
+	if _, err := db.UpsertMetric(m1); err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	m2 := models.NewMetric(models.MetricHeartRate, 56).WithSource("whoop").WithRecordedAt(chicago)
+	updated, err := db.UpsertMetric(m2)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("same instant in different zone must match")
+	}
+}
+
+func TestListMetricsFilterBySource(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	for _, src := range []string{"whoop", "emfit", "whoop"} {
+		m := models.NewMetric(models.MetricSleepHours, 7.5).WithSource(src)
+		if err := db.CreateMetric(m); err != nil {
+			t.Fatalf("CreateMetric: %v", err)
+		}
+	}
+
+	src := "whoop"
+	got, err := db.ListMetrics(nil, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("whoop count = %d, want 2", len(got))
+	}
+
+	// Combined type+source filter
+	mt := models.MetricSleepHours
+	got, err = db.ListMetrics(&mt, &src, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("combined filter count = %d, want 2", len(got))
+	}
+
+	// Filter normalizes case
+	src2 := "Emfit"
+	got, err = db.ListMetrics(nil, &src2, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("emfit count = %d, want 1", len(got))
+	}
+}
+
+func TestMetricSourceRoundTrip(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+	got, err := db.GetMetric(m.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric failed: %v", err)
+	}
+	if got.Source != "whoop" {
+		t.Errorf("Source = %q, want whoop", got.Source)
+	}
+
+	// Default path: no WithSource call
+	m2 := models.NewMetric(models.MetricWeight, 82.5)
+	if err := db.CreateMetric(m2); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+	got2, err := db.GetMetric(m2.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric failed: %v", err)
+	}
+	if got2.Source != models.SourceManual {
+		t.Errorf("default Source = %q, want manual", got2.Source)
+	}
+}
+
+func TestUpsertMetricUpdatesOldestLegacyDuplicate(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2026, 7, 28, 7, 0, 0, 0, time.UTC)
+	olderCreatedAt := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	newerCreatedAt := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	olderID := uuid.New()
+	newerID := uuid.New()
+
+	// Seed two rows sharing the same dedup key (source, metric_type, recorded_at)
+	// with distinct created_at values so "oldest" is unambiguous.
+	_, err := db.db.Exec(
+		`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at) VALUES (?, 'hrv', 40.0, 'ms', ?, NULL, 'whoop', ?)`,
+		olderID.String(), at.Format(time.RFC3339), olderCreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert older duplicate: %v", err)
+	}
+	_, err = db.db.Exec(
+		`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at) VALUES (?, 'hrv', 41.0, 'ms', ?, NULL, 'whoop', ?)`,
+		newerID.String(), at.Format(time.RFC3339), newerCreatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("insert newer duplicate: %v", err)
+	}
+
+	upsert := models.NewMetric(models.MetricHRV, 99).WithSource("whoop").WithRecordedAt(at)
+	updated, err := db.UpsertMetric(upsert)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true")
+	}
+	if upsert.ID != olderID {
+		t.Errorf("caller struct ID = %s, want oldest ID %s", upsert.ID, olderID)
+	}
+
+	// Total count must stay at 2.
+	all, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("count = %d, want 2 (both duplicates still present)", len(all))
+	}
+
+	// Oldest row now has the new value.
+	older, err := db.GetMetric(olderID.String())
+	if err != nil {
+		t.Fatalf("GetMetric older: %v", err)
+	}
+	if older.Value != 99 {
+		t.Errorf("older.Value = %v, want 99", older.Value)
+	}
+
+	// Newer duplicate is untouched.
+	newer, err := db.GetMetric(newerID.String())
+	if err != nil {
+		t.Fatalf("GetMetric newer: %v", err)
+	}
+	if newer.Value != 41 {
+		t.Errorf("newer.Value = %v, want 41 (untouched)", newer.Value)
+	}
+}
+
+func TestUpsertMetricPreservesCreatedAtSQLiteFormat(t *testing.T) {
+	// Rows written by an external sync script (or SQLite CURRENT_TIMESTAMP default)
+	// store created_at as "2006-01-02 15:04:05" — no T, no zone, UTC semantics.
+	// UpsertMetric must preserve that timestamp on update, not silently leave
+	// m.CreatedAt at whatever the caller passed.
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+	existingID := "11111111-1111-1111-1111-111111111111"
+	// Insert a row using the SQLite CURRENT_TIMESTAMP format for created_at.
+	_, err := db.db.Exec(
+		`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at)
+		 VALUES (?, 'hrv', 50.0, 'ms', ?, NULL, 'whoop', '2024-03-01 10:30:00')`,
+		existingID, at.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+
+	// Upsert with a different CreatedAt on the caller struct.
+	m := models.NewMetric(models.MetricHRV, 55).WithSource("whoop").WithRecordedAt(at)
+	m.CreatedAt = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) // caller's stale value
+
+	updated, err := db.UpsertMetric(m)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true (row already exists)")
+	}
+
+	// The returned m.CreatedAt must equal 2024-03-01T10:30:00Z (UTC), not 2099.
+	want := time.Date(2024, 3, 1, 10, 30, 0, 0, time.UTC)
+	if !m.CreatedAt.Equal(want) {
+		t.Errorf("m.CreatedAt = %v, want %v (SQLite CURRENT_TIMESTAMP format preserved)", m.CreatedAt, want)
+	}
+}
+
+func TestLegacyDBMigratesSourceToManual(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+
+	// Build a pre-source-column database by hand.
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	_, err = raw.Exec(`CREATE TABLE metrics (
+		id TEXT PRIMARY KEY, metric_type TEXT NOT NULL, value REAL NOT NULL,
+		unit TEXT NOT NULL, recorded_at DATETIME NOT NULL, notes TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`)
+	if err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	legacyID := uuid.New().String()
+	_, err = raw.Exec(`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, created_at) VALUES (?, 'weight', 80.0, 'kg', ?, ?)`,
+		legacyID, time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open migrated db: %v", err)
+	}
+	defer db.Close()
+
+	got, err := db.GetMetric(legacyID)
+	if err != nil {
+		t.Fatalf("GetMetric legacy row: %v", err)
+	}
+	if got.Source != models.SourceManual {
+		t.Errorf("legacy Source = %q, want manual", got.Source)
+	}
+
+	// New writes into the migrated DB carry their source.
+	m := models.NewMetric(models.MetricHRV, 50).WithSource("emfit")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric on migrated db: %v", err)
+	}
+	got2, err := db.GetMetric(m.ID.String())
+	if err != nil {
+		t.Fatalf("GetMetric: %v", err)
+	}
+	if got2.Source != "emfit" {
+		t.Errorf("Source = %q, want emfit", got2.Source)
 	}
 }

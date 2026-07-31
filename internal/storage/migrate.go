@@ -23,7 +23,7 @@ func MigrateData(src, dst Repository) (*MigrateSummary, error) {
 	summary := &MigrateSummary{}
 
 	// Migrate all metrics
-	metrics, err := src.ListMetrics(nil, 0)
+	metrics, err := src.ListMetrics(nil, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list source metrics: %w", err)
 	}

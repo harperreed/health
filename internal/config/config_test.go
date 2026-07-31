@@ -325,9 +325,16 @@ func TestConfigJSONOmitsEmpty(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	// Empty config should result in "{}" since fields have omitempty
-	if string(data) != "{}" {
-		t.Errorf("Expected empty JSON object, got %s", string(data))
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	// Scalar string fields with omitempty are absent when empty.
+	if _, ok := m["backend"]; ok {
+		t.Error("Expected 'backend' key to be omitted when empty")
+	}
+	if _, ok := m["data_dir"]; ok {
+		t.Error("Expected 'data_dir' key to be omitted when empty")
 	}
 }
 
@@ -347,5 +354,85 @@ func TestOpenStorageDefaultBackend(t *testing.T) {
 
 	if repo == nil {
 		t.Error("Expected non-nil repository")
+	}
+}
+
+func TestSyncConfigRoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	cfg := &Config{
+		Backend: "sqlite",
+		DataDir: "/tmp/health-data",
+		Sync: SyncConfig{
+			Whoop: OAuthProviderConfig{
+				ClientID:     "whoop-id",
+				ClientSecret: "whoop-secret",
+				RedirectURI:  "http://localhost:8080/callback",
+			},
+			Withings: OAuthProviderConfig{
+				ClientID:     "withings-id",
+				ClientSecret: "withings-secret",
+				RedirectURI:  "http://localhost:8080/callback",
+			},
+			Emfit: EmfitConfig{
+				Token:    "emfit-token",
+				DeviceID: "device-123",
+			},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if loaded.Sync.Whoop.ClientID != "whoop-id" {
+		t.Errorf("Whoop.ClientID = %q, want %q", loaded.Sync.Whoop.ClientID, "whoop-id")
+	}
+	if loaded.Sync.Whoop.ClientSecret != "whoop-secret" {
+		t.Errorf("Whoop.ClientSecret = %q, want %q", loaded.Sync.Whoop.ClientSecret, "whoop-secret")
+	}
+	if loaded.Sync.Whoop.RedirectURI != "http://localhost:8080/callback" {
+		t.Errorf("Whoop.RedirectURI = %q, want %q", loaded.Sync.Whoop.RedirectURI, "http://localhost:8080/callback")
+	}
+	if loaded.Sync.Withings.ClientID != "withings-id" {
+		t.Errorf("Withings.ClientID = %q, want %q", loaded.Sync.Withings.ClientID, "withings-id")
+	}
+	if loaded.Sync.Emfit.Token != "emfit-token" {
+		t.Errorf("Emfit.Token = %q, want %q", loaded.Sync.Emfit.Token, "emfit-token")
+	}
+	if loaded.Sync.Emfit.DeviceID != "device-123" {
+		t.Errorf("Emfit.DeviceID = %q, want %q", loaded.Sync.Emfit.DeviceID, "device-123")
+	}
+}
+
+func TestSyncConfigFilePerms(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	cfg := &Config{
+		Backend: "sqlite",
+		Sync: SyncConfig{
+			Whoop: OAuthProviderConfig{
+				ClientID:     "id",
+				ClientSecret: "secret",
+			},
+		},
+	}
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() failed: %v", err)
+	}
+
+	info, err := os.Stat(GetConfigPath())
+	if err != nil {
+		t.Fatalf("Stat config file: %v", err)
+	}
+	perm := info.Mode().Perm()
+	if perm != 0o600 {
+		t.Errorf("config file perms = %o, want 0600", perm)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/harperreed/health/internal/models"
 	"github.com/harperreed/health/internal/storage"
 	"github.com/spf13/cobra"
@@ -477,7 +478,7 @@ func TestAddCmdWithDB(t *testing.T) {
 	}
 
 	// Verify metric was created
-	metrics, err := testDB.ListMetrics(nil, 0)
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -504,7 +505,7 @@ func TestAddCmdWithNotes(t *testing.T) {
 		t.Errorf("add command with notes failed: %v", err)
 	}
 
-	metrics, err := testDB.ListMetrics(nil, 0)
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -548,7 +549,7 @@ func TestAddCmdBloodPressure(t *testing.T) {
 	}
 
 	// Should create 2 metrics (bp_sys and bp_dia)
-	metrics, err := testDB.ListMetrics(nil, 0)
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -1855,6 +1856,8 @@ func TestAllAddMetricTypes(t *testing.T) {
 			// Reset global flags
 			addAt = ""
 			addNotes = ""
+			addSource = ""
+			addDedupe = false
 
 			rootCmd.SetArgs([]string{"add", mt, "10"})
 			err := rootCmd.Execute()
@@ -1863,5 +1866,277 @@ func TestAllAddMetricTypes(t *testing.T) {
 				t.Errorf("add %s failed: %v", mt, err)
 			}
 		})
+	}
+}
+
+// captureStdout redirects both os.Stdout and color.Output for the duration
+// of f and returns all bytes written to either. Swapping color.Output is
+// necessary because fatih/color writes through its own package-level writer
+// (initialized to colorable.NewColorableStdout() at init) rather than
+// os.Stdout, so cobra's SetOut is not sufficient.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	oldStdout := os.Stdout
+	oldColorOut := color.Output
+	os.Stdout = w
+	color.Output = w
+
+	f()
+
+	w.Close()
+	os.Stdout = oldStdout
+	color.Output = oldColorOut
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("ReadFrom pipe: %v", err)
+	}
+	return buf.String()
+}
+
+// --- source/dedupe tests (Task 5) ---
+
+func TestAddCmdWithSource(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	var execErr error
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "hrv", "48", "--source", "whoop"})
+		execErr = rootCmd.Execute()
+	})
+	if execErr != nil {
+		t.Fatalf("add hrv --source whoop failed: %v", execErr)
+	}
+
+	// Stored metric should have Source "whoop"
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 1 {
+		t.Fatalf("Expected 1 metric, got %d", len(metrics))
+	}
+	if metrics[0].Source != "whoop" {
+		t.Errorf("Expected source 'whoop', got %q", metrics[0].Source)
+	}
+
+	// Output should contain [whoop]
+	if !strings.Contains(out, "[whoop]") {
+		t.Errorf("Expected output to contain '[whoop]', got: %s", out)
+	}
+}
+
+func TestAddCmdDedupeUpsert(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	ts := "2026-07-28 07:00"
+
+	// Reset flags once — cobra re-parses them from SetArgs on each Execute call.
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	// First run — creates the row; verify the "Added" verb.
+	out1 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "hrv", "48", "--source", "whoop", "--at", ts, "--dedupe"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("first add --dedupe failed: %v", err)
+		}
+	})
+	if !strings.Contains(out1, "Added") {
+		t.Errorf("First run: expected 'Added' verb in output, got: %q", out1)
+	}
+
+	// Second run — should update the existing row, not insert a new one.
+	out2 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "hrv", "48", "--source", "whoop", "--at", ts, "--dedupe"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("second add --dedupe failed: %v", err)
+		}
+	})
+
+	// Only one row should exist.
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 1 {
+		t.Errorf("Expected 1 metric after dedupe, got %d", len(metrics))
+	}
+
+	// The "✓ Updated" verb must appear (color.Output is now redirected by captureStdout).
+	if !strings.Contains(out2, "Updated") {
+		t.Errorf("Second run: expected 'Updated' verb in output, got: %q", out2)
+	}
+	if !strings.Contains(out2, "[whoop]") {
+		t.Errorf("Second run: expected '[whoop]' in detail line, got: %q", out2)
+	}
+}
+
+func TestAddCmdBPWithSource(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	rootCmd.SetArgs([]string{"add", "bp", "120", "80", "--source", "withings"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("add bp --source withings failed: %v", err)
+	}
+
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 2 {
+		t.Fatalf("Expected 2 BP metrics, got %d", len(metrics))
+	}
+	for _, m := range metrics {
+		if m.Source != "withings" {
+			t.Errorf("Expected source 'withings' for %s, got %q", m.MetricType, m.Source)
+		}
+	}
+}
+
+func TestAddCmdBPDedupeUpsert(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	ts := "2026-07-28 08:00"
+
+	// Reset flags once — cobra re-parses them from SetArgs on each Execute call.
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	// First run — creates both bp_sys and bp_dia rows; verify "Added blood pressure".
+	out1 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "bp", "120", "80", "--source", "withings", "--at", ts, "--dedupe"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("first add bp --dedupe failed: %v", err)
+		}
+	})
+	if !strings.Contains(out1, "Added") {
+		t.Errorf("First run: expected 'Added' verb in output, got: %q", out1)
+	}
+
+	// Second run — should upsert both rows, leaving exactly 2 metrics (not 4).
+	out2 := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"add", "bp", "120", "80", "--source", "withings", "--at", ts, "--dedupe"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Errorf("second add bp --dedupe failed: %v", err)
+		}
+	})
+
+	// Exactly 2 rows (bp_sys + bp_dia) — not 4.
+	metrics, err := testDB.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 2 {
+		t.Errorf("Expected 2 metrics after BP dedupe, got %d", len(metrics))
+	}
+
+	// The "✓ Updated blood pressure" line must appear.
+	if !strings.Contains(out2, "Updated") {
+		t.Errorf("Second run: expected 'Updated' verb in output, got: %q", out2)
+	}
+}
+
+func TestAddCmdInvalidTypeUsesValidMetricTypesList(t *testing.T) {
+	_, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	addAt = ""
+	addNotes = ""
+	addSource = ""
+	addDedupe = false
+
+	rootCmd.SetOut(&bytes.Buffer{})
+	var errBuf bytes.Buffer
+	rootCmd.SetErr(&errBuf)
+
+	rootCmd.SetArgs([]string{"add", "nosuchtype", "1"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("Expected error for unknown metric type")
+	}
+	// Error message should contain types from ValidMetricTypesList — spot-check two
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "weight") || !strings.Contains(errMsg, "body_fat") {
+		t.Errorf("Error message should contain 'weight' and 'body_fat', got: %q", errMsg)
+	}
+}
+
+func TestListCmdWithSourceFilter(t *testing.T) {
+	testDB, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	listType = ""
+	listLimit = 20
+	listSource = ""
+
+	// Add whoop and manual metrics
+	mWhoop := models.NewMetric(models.MetricHRV, 48)
+	mWhoop.WithSource("whoop")
+	testDB.CreateMetric(mWhoop)
+
+	mManual := models.NewMetric(models.MetricHRV, 55)
+	// leave as manual (default)
+	testDB.CreateMetric(mManual)
+
+	var execErr error
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"list", "--source", "whoop"})
+		execErr = rootCmd.Execute()
+	})
+	if execErr != nil {
+		t.Fatalf("list --source whoop failed: %v", execErr)
+	}
+
+	// Only one line (the whoop row)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 1 {
+		t.Errorf("Expected 1 line with --source whoop, got %d: %q", len(lines), out)
+	}
+	if !strings.Contains(out, "whoop") {
+		t.Errorf("Expected output to contain 'whoop', got: %s", out)
+	}
+}
+
+func TestAddCmdSourceFlag(t *testing.T) {
+	sourceFlag := addCmd.Flags().Lookup("source")
+	if sourceFlag == nil {
+		t.Error("Expected --source flag on add command")
+	}
+}
+
+func TestAddCmdDedupeFlag(t *testing.T) {
+	dedupeFlag := addCmd.Flags().Lookup("dedupe")
+	if dedupeFlag == nil {
+		t.Error("Expected --dedupe flag on add command")
+	}
+}
+
+func TestListCmdSourceFlag(t *testing.T) {
+	sourceFlag := listCmd.Flags().Lookup("source")
+	if sourceFlag == nil {
+		t.Error("Expected --source flag on list command")
 	}
 }

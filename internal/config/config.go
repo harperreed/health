@@ -14,6 +14,30 @@ import (
 	"github.com/harperreed/mdstore"
 )
 
+// SyncConfig holds native provider sync settings.
+type SyncConfig struct {
+	Whoop    OAuthProviderConfig `json:"whoop,omitempty"`
+	Withings OAuthProviderConfig `json:"withings,omitempty"`
+	Emfit    EmfitConfig         `json:"emfit,omitempty"`
+}
+
+// OAuthProviderConfig holds OAuth2 client credentials for a provider.
+type OAuthProviderConfig struct {
+	ClientID     string `json:"client_id,omitempty"`
+	ClientSecret string `json:"client_secret,omitempty"`
+	RedirectURI  string `json:"redirect_uri,omitempty"`
+}
+
+// EmfitConfig holds credentials for the Emfit QS API.
+// If Token is set it is used directly (no login). Otherwise Username+Password
+// are used with POST /api/v1/login. DeviceID is always required.
+type EmfitConfig struct {
+	Token    string `json:"token,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
 // Config stores health tool configuration.
 type Config struct {
 	// Backend selects the storage backend: "sqlite" (default) or "markdown".
@@ -23,6 +47,9 @@ type Config struct {
 	// SQLite puts health.db here. Markdown puts metrics/ and workouts/ folders here.
 	// Supports ~ expansion for home directory. Defaults to ~/.local/share/health.
 	DataDir string `json:"data_dir,omitempty"`
+
+	// Sync holds native provider sync configuration.
+	Sync SyncConfig `json:"sync,omitempty"`
 }
 
 // defaultDBFilename is the SQLite database filename used for existing-user detection.
@@ -124,12 +151,17 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// Save writes config to disk.
+// Save writes config to disk at 0600 regardless of umask.
+// The config stores OAuth client secrets, so world-readable permissions are
+// unacceptable even if the process umask is permissive (e.g. 022 on Linux).
 func (c *Config) Save() error {
 	path := GetConfigPath()
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return mdstore.AtomicWrite(path, data)
+	if err := mdstore.AtomicWrite(path, data); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }

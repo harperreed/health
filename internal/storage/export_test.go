@@ -198,7 +198,7 @@ func TestImportJSON(t *testing.T) {
 	}
 
 	// Verify imported data
-	metrics, err := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
 	if err != nil {
 		t.Fatalf("ListMetrics failed: %v", err)
 	}
@@ -719,13 +719,163 @@ func TestImportDataMultipleItems(t *testing.T) {
 		t.Fatalf("ImportData failed: %v", err)
 	}
 
-	metrics, _ := db.ListMetrics(nil, 0)
+	metrics, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
 	if len(metrics) != 2 {
 		t.Errorf("Expected 2 metrics, got %d", len(metrics))
 	}
 
-	workouts, _ := db.ListWorkouts(nil, 0)
+	workouts, err := db.ListWorkouts(nil, 0)
+	if err != nil {
+		t.Fatalf("ListWorkouts failed: %v", err)
+	}
 	if len(workouts) != 2 {
 		t.Errorf("Expected 2 workouts, got %d", len(workouts))
+	}
+}
+
+func TestExportYAMLIncludesSource(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+
+	data, err := db.ExportYAML()
+	if err != nil {
+		t.Fatalf("ExportYAML failed: %v", err)
+	}
+
+	if !strings.Contains(string(data), "source: whoop") {
+		t.Errorf("Expected 'source: whoop' in YAML export, got:\n%s", string(data))
+	}
+}
+
+func TestExportJSONIncludesSource(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+
+	data, err := db.ExportJSON()
+	if err != nil {
+		t.Fatalf("ExportJSON failed: %v", err)
+	}
+
+	if !strings.Contains(string(data), `"Source": "whoop"`) {
+		t.Errorf("Expected '\"Source\": \"whoop\"' in JSON export, got:\n%s", string(data))
+	}
+}
+
+func TestExportMarkdownIncludesSource(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	m := models.NewMetric(models.MetricHRV, 48).WithSource("whoop")
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+
+	// Test grouped (no type filter) branch
+	md, err := db.ExportMarkdown(nil, nil)
+	if err != nil {
+		t.Fatalf("ExportMarkdown failed: %v", err)
+	}
+	if !strings.Contains(md, "whoop") {
+		t.Errorf("Expected 'whoop' in grouped markdown export, got:\n%s", md)
+	}
+	if !strings.Contains(md, "| Date | Value | Source | Notes |") {
+		t.Errorf("Expected source column header in grouped markdown export, got:\n%s", md)
+	}
+
+	// Test per-type (with type filter) branch
+	hrvType := models.MetricHRV
+	md, err = db.ExportMarkdown(&hrvType, nil)
+	if err != nil {
+		t.Fatalf("ExportMarkdown with type failed: %v", err)
+	}
+	if !strings.Contains(md, "whoop") {
+		t.Errorf("Expected 'whoop' in per-type markdown export, got:\n%s", md)
+	}
+	if !strings.Contains(md, "| Date | Value | Source | Notes |") {
+		t.Errorf("Expected source column header in per-type markdown export, got:\n%s", md)
+	}
+}
+
+func TestImportJSONRoundTripPreservesSource(t *testing.T) {
+	db1 := setupTestDB(t)
+	defer db1.Close()
+
+	m := models.NewMetric(models.MetricRecovery, 85).WithSource("whoop")
+	if err := db1.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+
+	jsonBytes, err := db1.ExportJSON()
+	if err != nil {
+		t.Fatalf("ExportJSON failed: %v", err)
+	}
+
+	db2 := setupTestDB(t)
+	defer db2.Close()
+
+	if err := db2.ImportJSON(jsonBytes); err != nil {
+		t.Fatalf("ImportJSON failed: %v", err)
+	}
+
+	metrics, err := db2.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 1 {
+		t.Fatalf("Expected 1 metric after import, got %d", len(metrics))
+	}
+	if metrics[0].Source != "whoop" {
+		t.Errorf("Expected source 'whoop' after round-trip, got %q", metrics[0].Source)
+	}
+}
+
+func TestImportLegacyJSONWithoutSourceBecomesManual(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Legacy JSON: metric object has no Source field.
+	legacyJSON := `{
+		"version": "1.0",
+		"exported_at": "2025-01-01T12:00:00Z",
+		"tool": "health",
+		"metrics": [
+			{
+				"ID": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				"MetricType": "weight",
+				"Value": 80.0,
+				"Unit": "kg",
+				"RecordedAt": "2025-01-01T08:00:00Z",
+				"CreatedAt": "2025-01-01T08:00:00Z"
+			}
+		],
+		"workouts": []
+	}`
+
+	if err := db.ImportJSON([]byte(legacyJSON)); err != nil {
+		t.Fatalf("ImportJSON failed: %v", err)
+	}
+
+	metrics, err := db.ListMetrics(nil, nil, 0)
+	if err != nil {
+		t.Fatalf("ListMetrics failed: %v", err)
+	}
+	if len(metrics) != 1 {
+		t.Fatalf("Expected 1 metric, got %d", len(metrics))
+	}
+	if metrics[0].Source != "manual" {
+		t.Errorf("Expected legacy import source to be 'manual', got %q", metrics[0].Source)
 	}
 }

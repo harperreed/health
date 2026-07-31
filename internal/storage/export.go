@@ -29,7 +29,7 @@ func (d *DB) GetAllData() (*ExportData, error) {
 
 // GetAllDataFromRepo retrieves all data for export from any Repository.
 func GetAllDataFromRepo(r Repository) (*ExportData, error) {
-	metrics, err := r.ListMetrics(nil, 0)
+	metrics, err := r.ListMetrics(nil, nil, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list metrics: %w", err)
 	}
@@ -138,6 +138,7 @@ func ExportYAMLFromRepo(r Repository) ([]byte, error) {
 			Value:      m.Value,
 			Unit:       m.Unit,
 			RecordedAt: m.RecordedAt.Format(time.RFC3339),
+			Source:     m.Source,
 		}
 		if m.Notes != nil {
 			ym.Notes = *m.Notes
@@ -179,6 +180,7 @@ type yamlMetric struct {
 	Value      float64 `yaml:"value"`
 	Unit       string  `yaml:"unit"`
 	RecordedAt string  `yaml:"recorded_at"`
+	Source     string  `yaml:"source"`
 	Notes      string  `yaml:"notes,omitempty"`
 }
 
@@ -209,7 +211,7 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 	var metrics []*models.Metric
 	var err error
 
-	metrics, err = r.ListMetrics(metricType, 0)
+	metrics, err = r.ListMetrics(metricType, nil, 0)
 	if err != nil {
 		return "", err
 	}
@@ -228,21 +230,21 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 	var sb strings.Builder
 	now := time.Now()
 
-	sb.WriteString(fmt.Sprintf("# Health Export - %s\n\n", now.Format("2006-01-02")))
-	sb.WriteString(fmt.Sprintf("Generated: %s\n\n", now.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "# Health Export - %s\n\n", now.Format("2006-01-02"))
+	fmt.Fprintf(&sb, "Generated: %s\n\n", now.Format(time.RFC3339))
 
 	if metricType != nil {
-		sb.WriteString(fmt.Sprintf("## %s\n\n", *metricType))
-		sb.WriteString("| Date | Value | Notes |\n")
-		sb.WriteString("|------|-------|-------|\n")
+		fmt.Fprintf(&sb, "## %s\n\n", *metricType)
+		sb.WriteString("| Date | Value | Source | Notes |\n")
+		sb.WriteString("|------|-------|--------|-------|\n")
 		for _, m := range metrics {
 			notes := ""
 			if m.Notes != nil {
 				notes = *m.Notes
 			}
-			sb.WriteString(fmt.Sprintf("| %s | %.2f %s | %s |\n",
+			fmt.Fprintf(&sb, "| %s | %.2f %s | %s | %s |\n",
 				m.RecordedAt.Format("2006-01-02 15:04"),
-				m.Value, m.Unit, notes))
+				m.Value, m.Unit, m.Source, notes)
 		}
 	} else {
 		// Group by metric type
@@ -261,17 +263,17 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 		})
 
 		for _, t := range types {
-			sb.WriteString(fmt.Sprintf("## %s\n\n", t))
-			sb.WriteString("| Date | Value | Notes |\n")
-			sb.WriteString("|------|-------|-------|\n")
+			fmt.Fprintf(&sb, "## %s\n\n", t)
+			sb.WriteString("| Date | Value | Source | Notes |\n")
+			sb.WriteString("|------|-------|--------|-------|\n")
 			for _, m := range grouped[t] {
 				notes := ""
 				if m.Notes != nil {
 					notes = *m.Notes
 				}
-				sb.WriteString(fmt.Sprintf("| %s | %.2f %s | %s |\n",
+				fmt.Fprintf(&sb, "| %s | %.2f %s | %s | %s |\n",
 					m.RecordedAt.Format("2006-01-02 15:04"),
-					m.Value, m.Unit, notes))
+					m.Value, m.Unit, m.Source, notes)
 			}
 			sb.WriteString("\n")
 		}
@@ -303,9 +305,9 @@ func ExportMarkdownFromRepo(r Repository, metricType *models.MetricType, since *
 					if w.Notes != nil {
 						notes = *w.Notes
 					}
-					sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+					fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n",
 						w.StartedAt.Format("2006-01-02 15:04"),
-						w.WorkoutType, duration, notes))
+						w.WorkoutType, duration, notes)
 				}
 			}
 		}
