@@ -3,6 +3,7 @@
 package models
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -335,6 +336,8 @@ func TestValidateValue(t *testing.T) {
 		{"negative calories", MetricCalories, -100, true},
 		{"ambient temperature", MetricTemperature, 18.5, false},
 		{"fahrenheit typo", MetricTemperature, 98.6, true},
+		{"NaN slips comparisons", MetricSpO2, math.NaN(), true},
+		{"negative infinity", MetricWeight, math.Inf(-1), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

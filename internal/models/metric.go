@@ -4,6 +4,7 @@ package models
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -151,7 +152,8 @@ func ValidateValue(metricType MetricType, value float64) error {
 	if !ok {
 		return fmt.Errorf("unknown metric type: %s", metricType)
 	}
-	if value < r.Min || value > r.Max {
+	// NaN fails every comparison, so check it explicitly.
+	if math.IsNaN(value) || value < r.Min || value > r.Max {
 		return fmt.Errorf("%s value %.2f out of range: must be between %g and %g %s",
 			metricType, value, r.Min, r.Max, MetricUnits[metricType])
 	}
