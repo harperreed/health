@@ -3,6 +3,7 @@
 package models
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -103,6 +104,60 @@ var MetricUnits = map[MetricType]string{
 	MetricMeditation:      "min",
 }
 
+// MetricRange bounds plausible values for a metric type. Bounds are
+// inclusive and deliberately generous: they catch entry mistakes
+// (a weight of 8250, an spo2 of 150), not clinical outliers.
+type MetricRange struct {
+	Min float64
+	Max float64
+}
+
+// MetricRanges maps each metric type to its plausible value range.
+var MetricRanges = map[MetricType]MetricRange{
+	MetricWeight:    {0.5, 700},
+	MetricBodyFat:   {1, 75},
+	MetricBPSys:     {40, 300},
+	MetricBPDia:     {20, 200},
+	MetricHeartRate: {20, 300},
+	MetricHRV:       {1, 500},
+	// Temperature covers both body and ambient (Emfit logs bedroom temp);
+	// the ceiling still catches Fahrenheit entered as Celsius.
+	MetricTemperature:     {0, 50},
+	MetricRespiratoryRate: {4, 60},
+	MetricSpO2:            {50, 100},
+	MetricSteps:           {0, 200000},
+	MetricSleepHours:      {0, 24},
+	MetricActiveCalories:  {0, 20000},
+	MetricRecovery:        {0, 100},
+	MetricStrain:          {0, 21},
+	MetricWater:           {0, 20000},
+	MetricCalories:        {0, 20000},
+	MetricProtein:         {0, 2000},
+	MetricCarbs:           {0, 2000},
+	MetricFat:             {0, 2000},
+	MetricMood:            {1, 10},
+	MetricEnergy:          {1, 10},
+	MetricStress:          {1, 10},
+	MetricAnxiety:         {1, 10},
+	MetricFocus:           {1, 10},
+	MetricMeditation:      {0, 1440},
+}
+
+// ValidateValue rejects values outside the plausible range for the type.
+// Provider sync and import bypass this on purpose: it guards human and
+// agent entry, not machine round-trips of existing data.
+func ValidateValue(metricType MetricType, value float64) error {
+	r, ok := MetricRanges[metricType]
+	if !ok {
+		return fmt.Errorf("unknown metric type: %s", metricType)
+	}
+	if value < r.Min || value > r.Max {
+		return fmt.Errorf("%s value %.2f out of range: must be between %g and %g %s",
+			metricType, value, r.Min, r.Max, MetricUnits[metricType])
+	}
+	return nil
+}
+
 // AllMetricTypes returns all valid metric types.
 var AllMetricTypes = []MetricType{
 	MetricWeight, MetricBodyFat, MetricBPSys, MetricBPDia,
@@ -138,7 +193,7 @@ type Metric struct {
 
 // NewMetric creates a new Metric with generated UUID and current timestamp.
 func NewMetric(metricType MetricType, value float64) *Metric {
-	now := time.Now()
+	now := time.Now().UTC()
 	return &Metric{
 		ID:         uuid.New(),
 		MetricType: metricType,
