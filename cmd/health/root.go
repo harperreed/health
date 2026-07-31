@@ -69,9 +69,11 @@ MCP INTEGRATION:
 
 DATA STORAGE:
 
-  Metrics are stored locally. Default backend is SQLite at ~/.local/share/health/health.db.
-  Use 'health migrate --to markdown' to switch to markdown file storage.
-  Configuration is at ~/.config/health/config.json.`,
+  Metrics are stored locally. Default backend is markdown files at ~/.local/share/health/.
+  An existing SQLite store (health.db) is auto-detected and kept. Use 'health migrate'
+  to switch backends. Configuration is at ~/.config/health/config.json.`,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// Skip init for commands that don't need it
 		if cmd.Name() == "version" || cmd.Name() == "help" {
