@@ -110,13 +110,9 @@ func (c *WhoopClient) syncRecovery(repo storage.Repository, tok Token, start, en
 			if rec.ScoreState != "SCORED" || rec.Score == nil {
 				continue
 			}
-			ts, err := time.Parse(time.RFC3339, rec.CreatedAt)
+			ts, err := parseWhoopTime(rec.CreatedAt)
 			if err != nil {
-				// Whoop timestamps include milliseconds; try the extended form.
-				ts, err = time.Parse("2006-01-02T15:04:05.000Z", rec.CreatedAt)
-				if err != nil {
-					return fmt.Errorf("whoop recovery: parse timestamp %q: %w", rec.CreatedAt, err)
-				}
+				return fmt.Errorf("whoop recovery: parse timestamp %q: %w", rec.CreatedAt, err)
 			}
 			metrics := []*models.Metric{
 				models.NewMetric(models.MetricRecovery, rec.Score.RecoveryScore).
@@ -291,7 +287,7 @@ func (c *WhoopClient) fetchPage(tok Token, path string, start, end time.Time, ne
 		return fmt.Errorf("read body %s: %w", u.Path, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %s %s: status %d: %s", http.MethodGet, u.Path, resp.StatusCode, body)
+		return fmt.Errorf("HTTP %s %s: status %d: %s", http.MethodGet, u.Path, resp.StatusCode, truncateBody(body))
 	}
 	if err := json.Unmarshal(body, dst); err != nil {
 		return fmt.Errorf("decode %s: %w", u.Path, err)
@@ -331,7 +327,7 @@ func (c *WhoopClient) refreshToken(old Token) (Token, error) {
 		return Token{}, fmt.Errorf("whoop refresh: read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Token{}, fmt.Errorf("whoop refresh: status %d: %s", resp.StatusCode, body)
+		return Token{}, fmt.Errorf("whoop refresh: status %d: %s", resp.StatusCode, truncateBody(body))
 	}
 
 	var r tokenRefreshResponse
@@ -357,6 +353,17 @@ func (c *WhoopClient) refreshToken(old Token) (Token, error) {
 }
 
 // --- utilities ---
+
+// truncateBody caps a response body at 200 bytes before embedding it in an
+// error string. Token-endpoint error payloads can contain secrets; printing the
+// full body to the terminal is a secret-hygiene risk.
+func truncateBody(b []byte) string {
+	const limit = 200
+	if len(b) <= limit {
+		return string(b)
+	}
+	return string(b[:limit]) + "...(truncated)"
+}
 
 // parseWhoopTime parses a Whoop timestamp, accepting RFC3339 and the
 // millisecond variant Whoop returns ("2006-01-02T15:04:05.000Z").

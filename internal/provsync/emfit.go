@@ -118,7 +118,7 @@ func (c *EmfitClient) login() (string, error) {
 		return "", fmt.Errorf("emfit: login read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("emfit: login status %d: %s", resp.StatusCode, body)
+		return "", fmt.Errorf("emfit: login status %d: %s", resp.StatusCode, truncateBody(body))
 	}
 
 	var lr emfitLoginResponse
@@ -209,7 +209,7 @@ func (c *EmfitClient) syncLatest(repo storage.Repository, tok string) error {
 		return fmt.Errorf("emfit: read body %s: %w", path, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("emfit: GET %s: status %d: %s", path, resp.StatusCode, body)
+		return fmt.Errorf("emfit: GET %s: status %d: %s", path, resp.StatusCode, truncateBody(body))
 	}
 
 	var presence emfitPresenceResponse

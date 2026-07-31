@@ -484,3 +484,33 @@ func TestExchangeWhoopSendsCorrectParams(t *testing.T) {
 		t.Errorf("AccessToken = %q", tok.AccessToken)
 	}
 }
+
+func TestTruncateBody(t *testing.T) {
+	// A body longer than 200 bytes must be truncated and include the marker.
+	long := make([]byte, 250)
+	for i := range long {
+		long[i] = 'x'
+	}
+	got := truncateBody(long)
+	if len(got) > 220 { // 200 chars + marker overhead
+		t.Errorf("truncated body too long: %d chars", len(got))
+	}
+	if !strings.Contains(got, "...(truncated)") {
+		t.Errorf("truncated body missing marker; got %q", got)
+	}
+
+	// A body of 200 bytes or fewer must pass through unchanged.
+	short := []byte("hello error response")
+	if got := truncateBody(short); got != "hello error response" {
+		t.Errorf("short body = %q, want unchanged", got)
+	}
+
+	// Exactly 200 bytes: no truncation.
+	exact := make([]byte, 200)
+	for i := range exact {
+		exact[i] = 'a'
+	}
+	if got := truncateBody(exact); got != string(exact) {
+		t.Errorf("200-byte body should pass through unchanged")
+	}
+}

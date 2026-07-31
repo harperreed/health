@@ -246,7 +246,7 @@ func ExchangeWhoop(tokenURL, clientID, clientSecret, redirectURI, code string) (
 		return Token{}, fmt.Errorf("whoop exchange: read body: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Token{}, fmt.Errorf("whoop exchange: status %d: %s", resp.StatusCode, body)
+		return Token{}, fmt.Errorf("whoop exchange: status %d: %s", resp.StatusCode, truncateBody(body))
 	}
 
 	var r tokenRefreshResponse
