@@ -705,7 +705,7 @@ func (s *MarkdownStore) ListWorkoutMetrics(workoutID uuid.UUID) ([]*models.Worko
 		return nil, fmt.Errorf("list workout metrics: %w", err)
 	}
 
-	var metrics []*models.WorkoutMetric
+	metrics := make([]*models.WorkoutMetric, 0, len(w.Metrics))
 	for i := range w.Metrics {
 		metrics = append(metrics, &w.Metrics[i])
 	}
