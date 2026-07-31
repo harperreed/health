@@ -151,12 +151,17 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// Save writes config to disk.
+// Save writes config to disk at 0600 regardless of umask.
+// The config stores OAuth client secrets, so world-readable permissions are
+// unacceptable even if the process umask is permissive (e.g. 022 on Linux).
 func (c *Config) Save() error {
 	path := GetConfigPath()
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return mdstore.AtomicWrite(path, data)
+	if err := mdstore.AtomicWrite(path, data); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
