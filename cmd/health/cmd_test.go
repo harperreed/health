@@ -2140,3 +2140,35 @@ func TestListCmdSourceFlag(t *testing.T) {
 		t.Error("Expected --source flag on list command")
 	}
 }
+
+func TestRootHelpDocumentsMarkdownDefault(t *testing.T) {
+	if strings.Contains(rootCmd.Long, "Default backend is SQLite") {
+		t.Error("root help claims SQLite is the default backend; markdown is the default for new users")
+	}
+	if !strings.Contains(rootCmd.Long, "Default backend is markdown") {
+		t.Error("root help should state that markdown is the default backend")
+	}
+}
+
+func TestRuntimeErrorDoesNotPrintUsage(t *testing.T) {
+	_, cleanup := setupTestCLI(t)
+	defer cleanup()
+
+	var out, errOut bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&errOut)
+	defer func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+	}()
+
+	rootCmd.SetArgs([]string{"sync", "fitbit"})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+	combined := out.String() + errOut.String()
+	if strings.Contains(combined, "Usage:") {
+		t.Errorf("runtime error printed usage text:\n%s", combined)
+	}
+}
