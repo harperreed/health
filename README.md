@@ -72,6 +72,8 @@ health add bp <systolic> <diastolic>  # Blood pressure (special case)
 - `--source/-s <string>` - Tag the data source: `whoop`, `withings`, `emfit`, `manual`, or any free-form string (default: `manual`)
 - `--dedupe` - Upsert: update an existing entry with the same source, type, and timestamp instead of creating a duplicate
 
+Values are checked against a plausible range per metric type (e.g. `spo2` must be 50–100); out-of-range values are rejected. The same check applies to the MCP `add_metric` tool. Provider sync and import skip it.
+
 **Examples:**
 ```bash
 health add weight 82.5

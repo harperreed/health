@@ -21,10 +21,10 @@ func (d *DB) CreateWorkout(w *models.Workout) error {
 	_, err := d.db.Exec(query,
 		w.ID.String(),
 		w.WorkoutType,
-		w.StartedAt.Format(time.RFC3339),
+		w.StartedAt.UTC().Format(time.RFC3339),
 		w.DurationMinutes,
 		w.Notes,
-		w.CreatedAt.Format(time.RFC3339),
+		w.CreatedAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("create workout: %w", err)
@@ -138,7 +138,7 @@ func (d *DB) AddWorkoutMetric(wm *models.WorkoutMetric) error {
 		wm.MetricName,
 		wm.Value,
 		wm.Unit,
-		wm.CreatedAt.Format(time.RFC3339),
+		wm.CreatedAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("add workout metric: %w", err)

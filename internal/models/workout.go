@@ -21,7 +21,7 @@ type Workout struct {
 
 // NewWorkout creates a new Workout with generated UUID and current timestamp.
 func NewWorkout(workoutType string) *Workout {
-	now := time.Now()
+	now := time.Now().UTC()
 	return &Workout{
 		ID:          uuid.New(),
 		WorkoutType: workoutType,
@@ -70,6 +70,6 @@ func NewWorkoutMetric(workoutID uuid.UUID, name string, value float64, unit stri
 		MetricName: name,
 		Value:      value,
 		Unit:       unitPtr,
-		CreatedAt:  time.Now(),
+		CreatedAt:  time.Now().UTC(),
 	}
 }

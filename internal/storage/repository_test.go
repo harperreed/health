@@ -1403,3 +1403,29 @@ func TestLegacyDBMigratesSourceToManual(t *testing.T) {
 		t.Errorf("Source = %q, want emfit", got2.Source)
 	}
 }
+
+func TestSQLiteStoresTimestampsInUTCForm(t *testing.T) {
+	db := setupTestDB(t)
+
+	loc := time.FixedZone("CDT", -5*3600)
+	m := models.NewMetric(models.MetricWeight, 80)
+	m.WithRecordedAt(time.Date(2026, 7, 31, 12, 0, 0, 0, loc))
+	m.CreatedAt = time.Date(2026, 7, 31, 12, 0, 0, 0, loc)
+
+	if err := db.CreateMetric(m); err != nil {
+		t.Fatalf("CreateMetric failed: %v", err)
+	}
+
+	var recorded, created string
+	err := db.db.QueryRow(`SELECT recorded_at, created_at FROM metrics WHERE id = ?`, m.ID.String()).Scan(&recorded, &created)
+	if err != nil {
+		t.Fatalf("raw select failed: %v", err)
+	}
+
+	if recorded != "2026-07-31T17:00:00Z" {
+		t.Errorf("recorded_at stored as %q, want UTC form %q", recorded, "2026-07-31T17:00:00Z")
+	}
+	if created != "2026-07-31T17:00:00Z" {
+		t.Errorf("created_at stored as %q, want UTC form %q", created, "2026-07-31T17:00:00Z")
+	}
+}

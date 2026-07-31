@@ -3,6 +3,7 @@
 package models
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -309,5 +310,65 @@ func TestNewMetricTypesAreValid(t *testing.T) {
 		if m.Unit != c.unit {
 			t.Errorf("unit for %s = %q, want %q", c.name, m.Unit, c.unit)
 		}
+	}
+}
+
+func TestValidateValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		mt      MetricType
+		value   float64
+		wantErr bool
+	}{
+		{"spo2 impossible high", MetricSpO2, 150, true},
+		{"spo2 upper bound", MetricSpO2, 100, false},
+		{"spo2 lower bound", MetricSpO2, 50, false},
+		{"spo2 below plausible", MetricSpO2, 49.9, true},
+		{"weight typo", MetricWeight, 8250, true},
+		{"weight normal", MetricWeight, 82.5, false},
+		{"strain upper bound", MetricStrain, 21, false},
+		{"strain above scale", MetricStrain, 21.1, true},
+		{"mood below scale", MetricMood, 0, true},
+		{"mood lower bound", MetricMood, 1, false},
+		{"mood upper bound", MetricMood, 10, false},
+		{"mood above scale", MetricMood, 11, true},
+		{"steps zero", MetricSteps, 0, false},
+		{"negative calories", MetricCalories, -100, true},
+		{"ambient temperature", MetricTemperature, 18.5, false},
+		{"fahrenheit typo", MetricTemperature, 98.6, true},
+		{"NaN slips comparisons", MetricSpO2, math.NaN(), true},
+		{"negative infinity", MetricWeight, math.Inf(-1), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateValue(tt.mt, tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateValue(%s, %v) error = %v, wantErr %v", tt.mt, tt.value, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateValueUnknownType(t *testing.T) {
+	if err := ValidateValue(MetricType("blorp"), 5); err == nil {
+		t.Error("expected error for unknown metric type")
+	}
+}
+
+func TestAllMetricTypesHaveRanges(t *testing.T) {
+	for _, mt := range AllMetricTypes {
+		if _, ok := MetricRanges[mt]; !ok {
+			t.Errorf("metric type %s has no entry in MetricRanges", mt)
+		}
+	}
+}
+
+func TestNewMetricTimestampsAreUTC(t *testing.T) {
+	m := NewMetric(MetricWeight, 80)
+	if m.CreatedAt.Location() != time.UTC {
+		t.Errorf("CreatedAt location = %v, want UTC", m.CreatedAt.Location())
+	}
+	if m.RecordedAt.Location() != time.UTC {
+		t.Errorf("RecordedAt location = %v, want UTC", m.RecordedAt.Location())
 	}
 }
