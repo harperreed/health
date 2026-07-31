@@ -63,10 +63,28 @@ func (d *DB) UpsertMetric(m *models.Metric) (bool, error) {
 	}
 
 	m.ID, _ = uuid.Parse(existingID)
-	if t, perr := time.Parse(time.RFC3339, existingCreatedAt); perr == nil {
-		m.CreatedAt = t
+	t, perr := parseCreatedAt(existingCreatedAt)
+	if perr != nil {
+		return false, fmt.Errorf("upsert metric: parse existing created_at %q: %w", existingCreatedAt, perr)
 	}
+	m.CreatedAt = t
 	return true, nil
+}
+
+// parseCreatedAt parses a created_at string from SQLite.
+// Accepts RFC3339 ("2006-01-02T15:04:05Z07:00") and the SQLite
+// CURRENT_TIMESTAMP default format ("2006-01-02 15:04:05", UTC).
+// Returns a wrapped error if neither format succeeds.
+func parseCreatedAt(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	// SQLite CURRENT_TIMESTAMP stores "2006-01-02 15:04:05" — no T, no zone.
+	// That format is always UTC per SQLite semantics.
+	if t, err := time.Parse("2006-01-02 15:04:05", s); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognized timestamp format")
 }
 
 // GetMetric retrieves a metric by ID or ID prefix.

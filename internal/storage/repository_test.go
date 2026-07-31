@@ -1311,6 +1311,45 @@ func TestUpsertMetricUpdatesOldestLegacyDuplicate(t *testing.T) {
 	}
 }
 
+func TestUpsertMetricPreservesCreatedAtSQLiteFormat(t *testing.T) {
+	// Rows written by an external sync script (or SQLite CURRENT_TIMESTAMP default)
+	// store created_at as "2006-01-02 15:04:05" — no T, no zone, UTC semantics.
+	// UpsertMetric must preserve that timestamp on update, not silently leave
+	// m.CreatedAt at whatever the caller passed.
+	db := setupTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2024, 3, 1, 12, 0, 0, 0, time.UTC)
+	existingID := "11111111-1111-1111-1111-111111111111"
+	// Insert a row using the SQLite CURRENT_TIMESTAMP format for created_at.
+	_, err := db.db.Exec(
+		`INSERT INTO metrics (id, metric_type, value, unit, recorded_at, notes, source, created_at)
+		 VALUES (?, 'hrv', 50.0, 'ms', ?, NULL, 'whoop', '2024-03-01 10:30:00')`,
+		existingID, at.Format(time.RFC3339),
+	)
+	if err != nil {
+		t.Fatalf("seed row: %v", err)
+	}
+
+	// Upsert with a different CreatedAt on the caller struct.
+	m := models.NewMetric(models.MetricHRV, 55).WithSource("whoop").WithRecordedAt(at)
+	m.CreatedAt = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC) // caller's stale value
+
+	updated, err := db.UpsertMetric(m)
+	if err != nil {
+		t.Fatalf("UpsertMetric: %v", err)
+	}
+	if !updated {
+		t.Errorf("updated = false, want true (row already exists)")
+	}
+
+	// The returned m.CreatedAt must equal 2024-03-01T10:30:00Z (UTC), not 2099.
+	want := time.Date(2024, 3, 1, 10, 30, 0, 0, time.UTC)
+	if !m.CreatedAt.Equal(want) {
+		t.Errorf("m.CreatedAt = %v, want %v (SQLite CURRENT_TIMESTAMP format preserved)", m.CreatedAt, want)
+	}
+}
+
 func TestLegacyDBMigratesSourceToManual(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "legacy.db")
