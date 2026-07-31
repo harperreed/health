@@ -25,10 +25,10 @@ func (d *DB) CreateMetric(m *models.Metric) error {
 		string(m.MetricType),
 		m.Value,
 		m.Unit,
-		m.RecordedAt.Format(time.RFC3339),
+		m.RecordedAt.UTC().Format(time.RFC3339),
 		m.Notes,
 		m.Source,
-		m.CreatedAt.Format(time.RFC3339),
+		m.CreatedAt.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		return fmt.Errorf("create metric: %w", err)
@@ -49,7 +49,7 @@ func (d *DB) UpsertMetric(m *models.Metric) (bool, error) {
 		WHERE source = ? AND metric_type = ? AND datetime(recorded_at) = datetime(?)
 		ORDER BY created_at ASC, id ASC
 		LIMIT 1
-	`, m.Source, string(m.MetricType), m.RecordedAt.Format(time.RFC3339)).Scan(&existingID, &existingCreatedAt)
+	`, m.Source, string(m.MetricType), m.RecordedAt.UTC().Format(time.RFC3339)).Scan(&existingID, &existingCreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, d.CreateMetric(m)
 	}
