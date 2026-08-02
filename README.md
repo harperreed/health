@@ -1,6 +1,6 @@
 # health
 
-A fast, privacy-focused CLI for tracking personal health metrics with cloud sync and AI assistant integration.
+A fast, privacy-focused CLI for tracking personal health metrics with native wearable sync and AI assistant integration.
 
 ## Features
 
@@ -8,10 +8,10 @@ A fast, privacy-focused CLI for tracking personal health metrics with cloud sync
 - **Source tagging** to track where data comes from (whoop, withings, emfit, manual, or custom)
 - **Idempotent upsert** (`--dedupe`) for safe repeated imports from wearables
 - **Workout tracking** with custom sub-metrics (distance, pace, heart rate, etc.)
-- **End-to-end encrypted sync** across devices via Charm Cloud
+- **Native provider sync** from Whoop, Withings, and Emfit QS — the only commands that touch the network
 - **MCP server** for AI assistant integration (Claude Desktop, etc.)
 - **Backdating support** for logging historical data
-- **SQLite storage** for reliable concurrent access
+- **Local plain-text storage** — markdown files by default; an existing SQLite store is auto-detected (switch with `health migrate`)
 
 ## Installation
 
@@ -53,8 +53,8 @@ health list --type weight
 health workout add run --duration 30
 health workout metric <id> distance 5.0 km
 
-# Set up cloud sync
-health sync link
+# Sync from a wearable (one-time OAuth setup: health sync auth whoop)
+health sync whoop
 ```
 
 ## Commands
@@ -271,7 +271,7 @@ health sync emfit
 | `carbs` | g | Carbohydrate intake |
 | `fat` | g | Fat intake |
 
-### Mental Health (1-10 scale)
+### Mental Health (1–10 scale; meditation in minutes)
 | Type | Description |
 |------|-------------|
 | `mood` | Overall mood |
@@ -320,9 +320,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Data Storage
 
-- **Location:** `~/.local/share/charm/kv/health`
-- **Backend:** SQLite via Charm KV
-- **Sync:** End-to-end encrypted with SSH key
+- **Location:** `~/.local/share/health/` (respects `XDG_DATA_HOME`)
+- **Backend:** Markdown files by default; an existing SQLite store (`health.db`) is auto-detected and kept. `health migrate` switches between backends.
+- **Network:** None, except `health sync` provider commands. No telemetry.
 
 ## Development
 
