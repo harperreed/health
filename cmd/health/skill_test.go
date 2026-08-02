@@ -471,8 +471,11 @@ func TestSkillEmbeddedContentMatchesSource(t *testing.T) {
 		"mcp__health__list_metrics",
 		"mcp__health__get_latest",
 		"mcp__health__add_workout",
+		"mcp__health__add_workout_metric",
 		"mcp__health__list_workouts",
+		"mcp__health__get_workout",
 		"mcp__health__delete_metric",
+		"mcp__health__delete_workout",
 	}
 
 	contentStr := string(content)
