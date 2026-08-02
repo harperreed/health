@@ -5,11 +5,13 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/harperreed/health/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -431,6 +433,28 @@ func TestSkillInstallUsesCobraStreams(t *testing.T) {
 	}
 	if !strings.Contains(output, "Installed health skill successfully") {
 		t.Errorf("Expected success message in Cobra output stream, got: %s", output)
+	}
+}
+
+// TestSkillDocumentsAllMetricTypes pins SKILL.md to the real metric registry:
+// every type in models.AllMetricTypes must appear, and the stated count must
+// match, so the skill card cannot silently drift when types are added.
+func TestSkillDocumentsAllMetricTypes(t *testing.T) {
+	content, err := skillFS.ReadFile("skill/SKILL.md")
+	if err != nil {
+		t.Fatalf("Failed to read embedded skill: %v", err)
+	}
+	contentStr := string(content)
+
+	for _, mt := range models.AllMetricTypes {
+		if !strings.Contains(contentStr, string(mt)) {
+			t.Errorf("SKILL.md does not document metric type %q", mt)
+		}
+	}
+
+	want := fmt.Sprintf("Track %d metric types", len(models.AllMetricTypes))
+	if !strings.Contains(contentStr, want) {
+		t.Errorf("SKILL.md metric count is stale: expected the text %q", want)
 	}
 }
 
