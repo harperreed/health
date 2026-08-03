@@ -277,6 +277,9 @@ func TestCallbackStateMismatch(t *testing.T) {
 		t.Fatalf("GET callback: %v", err)
 	}
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("callback status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
 
 	select {
 	case runErr := <-errCh:
