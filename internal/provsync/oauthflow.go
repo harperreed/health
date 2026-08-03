@@ -150,7 +150,11 @@ func (f *OAuthFlow) Run(stdout io.Writer) error {
 	select {
 	case result = <-codeCh:
 	case err = <-errCh:
-		_ = srv.Close()
+		// Graceful shutdown so the error response reaches the browser:
+		// Close races the handler's response flush and resets the connection.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
 		return err
 	case <-time.After(5 * time.Minute):
 		_ = srv.Close()
