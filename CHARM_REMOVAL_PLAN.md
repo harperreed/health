@@ -1,5 +1,8 @@
 # Health - Charm Removal Plan
 
+> **Status: completed.** Landed in commit `06b1fc1` (`feat!: replace Charm KV with SQLite storage`).
+> Kept as the record of that migration — everything below describes the pre-migration state and the plan as written.
+
 ## CRITICAL: Full KV→SQLite Migration
 
 Health uses Charm KV with E2E encryption as primary storage. No existing SQLite backend.
